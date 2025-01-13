@@ -21,8 +21,11 @@ class DataCache:
             exit()
         # Initialize cache management
         self.cache = {}
-        self.cache_order = PriorityQueue()
-        self.cache_size = config.get('cache_size', 5)
+        self.cache_order = PriorityQueue(min_queue=True)
+        self.request_queue = PriorityQueue(min_queue=False)
+        self.cache_usage = 0
+        # Load configuration, size is counted in gigabytes
+        self.cache_size = config.get('cache_size', 20) * 1024 * 1024 * 1024
         self.data_path = config.get('data_path', '/home/haolinl/converted_parquet')
 
     def __del__(self):
@@ -58,6 +61,7 @@ class DataCache:
         # Store shared memory name, shape, and dtype in the cache
         self.cache[data_id] = {'shm_name': shm_name, 'shape': array.shape, 'dtype': array.dtype}
         print(f"Loaded data {data_id} into shared memory {shm_name}")
+        self.cache_usage += array.nbytes
         # Manage cache size
         self.manage_cache()
         # Close the mmap object (shared memory remains open for other processes)
@@ -66,17 +70,25 @@ class DataCache:
         shm.close_fd()
 
     def manage_cache(self):
-        while len(self.cache) > self.cache_size:
+        while self.cache_size != 0: 
             # Remove the least recently used data
-            least_used_key, least_used_weight = self.cache_order.getmin()
+            least_used_key, least_used_weight = self.cache_order.front()
             if least_used_weight > 0:
                 break
-            print(f"Cache is full, removing {least_used_key}")
+            print(f"removing {least_used_key}")
             shm_name = self.cache[least_used_key]['shm_name']
             # Open and unlink the shared memory
             shm = posix_ipc.SharedMemory(name=shm_name)
             shm.unlink()
             del self.cache[least_used_key]
+            self.cache_usage -= shm.size
+        # not safe, when data is larger then the empty cache size
+        while self.cache_usage < self.cache_size and not self.request_queue.empty():
+            # Load the next requested data
+            next_data_id, next_data_weight = self.request_queue.pop()
+            data_path = self.get_data_path(next_data_id)
+            self.load_h5_data_to_memory(next_data_id, data_path)
+            self.cache_order.increase(next_data_id, next_data_weight)
 
     def get_data_path(self, data_id):
         # Get the data file path based on data_id
@@ -91,9 +103,12 @@ class DataCache:
             shm = posix_ipc.SharedMemory(name=shm_name)
             shm.unlink()
             self.cache_order.pop()
-        fcntl.lockf(self.fp, fcntl.LOCK_UN)
-        os.remove(self.lock_file)
         os._exit(0)
+
+    def on_complete(self, data_id):
+        self.cache_order.decrease(data_id)
+        print(f"Received completion notification for {data_id}, decreased weight.")
+        self.manage_cache()
 
     def start_service(self, host='localhost', port=6000):
         # Create a socket
@@ -113,18 +128,22 @@ class DataCache:
                         # Data is in cache, return shared memory info
                         info = f"{self.cache[data_id]['shm_name']}|{self.cache[data_id]['shape']}|{self.cache[data_id]['dtype']}"
                         client_socket.send(info.encode())
-                    else:
+                    elif self.cache_usage < self.cache_size:
                         # Data is not in cache, load it
                         data_path = self.get_data_path(data_id)
                         self.load_h5_data_to_memory(data_id, data_path)
                         # Return shared memory info
                         info = f"{self.cache[data_id]['shm_name']}|{self.cache[data_id]['shape']}|{self.cache[data_id]['dtype']}"
                         client_socket.send(info.encode())
-                    self.cache_order.increase(data_id)
+                        self.cache_order.increase(data_id)
+                    else:
+                        # Cache is full, add request to queue
+                        self.request_queue.increase(data_id)
+                        print(f"Cache is full, added {data_id} to request queue.")
+                        client_socket.send("WAIT".encode())
                 elif data.startswith("COMPLETE"):
                     _, data_id = data.split('#')
-                    self.cache_order.decrease(data_id)
-                    print(f"Received completion notification for {data_id}, decreased weight.")
+                    self.on_complete(data_id)
                     client_socket.send("ACK".encode())
                 client_socket.close()
         except KeyboardInterrupt:
