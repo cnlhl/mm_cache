@@ -29,7 +29,8 @@ class DataLoader:
             print(f"Completion notification for {data_id} sent successfully.")
         client_socket.close()
 
-    def get(self, data_id):
+    def load_day(self, table, date):
+        data_id = f'{date}_{table}'
         shm_name, shape, dtype = self.request_data(data_id)
         print(shm_name, shape, dtype)
 
@@ -45,6 +46,20 @@ class DataLoader:
             return df
         except Exception as e:
             print(f"Error loading data {data_id}: {e}")
+    
+    def load_stock(self, table, date, stock):
+        df = self.load_day(table, date)
+        return df[df['stock_id'] == stock]
+        
+
+    def get(self, table, date, stock_ids=None):
+        if stock_ids is None:
+            return self.load_day(table, date)
+        else :
+            res = {}
+            for stock in stock_ids:
+                res[stock] = self.load_stock(table, date, stock)
+            return res
 
     def finish_using(self, data_id):
         self.notify_completion(data_id)
