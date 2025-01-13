@@ -21,6 +21,10 @@ class PriorityQueue:
         entry = self.entry_finder.pop(key)
         entry[-1] = self.REMOVED
 
+    def empty(self):
+        """检查堆是否为空"""
+        return len(self.entry_finder) == 0
+
     def decrease(self, key):
         """权重减1"""
         if key not in self.entry_finder:

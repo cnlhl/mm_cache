@@ -81,6 +81,19 @@ class DataCache:
     def get_data_path(self, data_id):
         # Get the data file path based on data_id
         return  os.path.join(self.data_path,f'{data_id}.parquet')
+    
+    def exit_and_clean(self):
+        while not self.cache_order.empty():
+            # Remove the least recently used data
+            least_used_key, least_used_weight = self.cache_order.getmin()
+            shm_name = self.cache[least_used_key]['shm_name']
+            # Open and unlink the shared memory
+            shm = posix_ipc.SharedMemory(name=shm_name)
+            shm.unlink()
+            self.cache_order.pop()
+        fcntl.lockf(self.fp, fcntl.LOCK_UN)
+        os.remove(self.lock_file)
+        os._exit(0)
 
     def start_service(self, host='localhost', port=6000):
         # Create a socket
@@ -116,5 +129,7 @@ class DataCache:
                 client_socket.close()
         except KeyboardInterrupt:
             print("Dataloader service stopped")
+            self.exit_and_clean()
+
         finally:
             self.server_socket.close()
