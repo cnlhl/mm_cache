@@ -25,14 +25,16 @@ class DataCache:
         self.request_queue = PriorityQueue(min_queue=False)
         self.cache_usage = 0
         # Load configuration, size is counted in gigabytes
-        self.cache_size = config.get('cache_size', 20) * 1024 * 1024 * 1024
+        self.cache_capacity = config.get('cache_size', 20) * 1024 * 1024 * 1024
         self.data_path = config.get('data_path', '/home/haolinl/converted_parquet')
 
     def __del__(self):
         fcntl.lockf(self.fp, fcntl.LOCK_UN)
         os.remove(self.lock_file)
 
-    def load_h5_data_to_memory(self, data_id, data_path):
+    def load_h5_data_to_memory(self, data_id):
+        # Get the data file path based on data_id
+        data_path = self.get_data_path(data_id)
         # Load data as a Pandas DataFrame
         df = pd.read_parquet(data_path)
         # Convert to NumPy array for sharing
@@ -71,11 +73,9 @@ class DataCache:
         shm.close_fd()
 
     def manage_cache(self):
-        while self.cache_size != 0: 
-            # Remove the least recently used data
-            least_used_key, least_used_weight = self.cache_order.front()
-            if least_used_weight > 0:
-                break
+        while not self.cache_order.empty() and self.cache_order.front()[1] == 0: 
+            # Remove data not being used
+            least_used_key = self.cache_order.front()[0]
             print(f"removing {least_used_key}")
             shm_name = self.cache[least_used_key]['shm_name']
             # Open and unlink the shared memory
@@ -83,8 +83,9 @@ class DataCache:
             shm.unlink()
             del self.cache[least_used_key]
             self.cache_usage -= shm.size
+            self.cache_order.pop()
         # not safe, when data is larger then the empty cache size
-        while self.cache_usage < self.cache_size and not self.request_queue.empty():
+        while self.cache_usage < self.cache_capacity and not self.request_queue.empty():
             # Load the next requested data
             next_data_id, next_data_weight = self.request_queue.pop()
             data_path = self.get_data_path(next_data_id)
@@ -93,7 +94,7 @@ class DataCache:
 
     def get_data_path(self, data_id):
         # Get the data file path based on data_id
-        return  os.path.join(self.data_path,f'{data_id}.parquet')
+        return  os.path.join(self.data_path,f'{data_id}s.parquet')
     
     def exit_and_clean(self):
         while not self.cache_order.empty():
@@ -129,10 +130,9 @@ class DataCache:
                         # Data is in cache, return shared memory info
                         info = f"{self.cache[data_id]['shm_name']}|{self.cache[data_id]['shape']}|{self.cache[data_id]['dtype']}"
                         client_socket.send(info.encode())
-                    elif self.cache_usage < self.cache_size:
+                    elif self.cache_usage < self.cache_capacity:
                         # Data is not in cache, load it
-                        data_path = self.get_data_path(data_id)
-                        self.load_h5_data_to_memory(data_id, data_path)
+                        self.load_h5_data_to_memory(data_id)
                         # Return shared memory info
                         info = f"{self.cache[data_id]['shm_name']}|{self.cache[data_id]['shape']}|{self.cache[data_id]['dtype']}"
                         client_socket.send(info.encode())

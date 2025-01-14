@@ -21,5 +21,5 @@ if __name__ == "__main__":
     date_dirs
     for date_dir in date_dirs:
         data_loader = DataLoader()
-        df = data_loader.get('trades', date_dir)
+        df = data_loader.get('trade', date_dir)
         print(df)

@@ -8,6 +8,11 @@ class DataLoader:
     def __init__(self, host='localhost', port=6000):
         self.host = host
         self.port = port
+        self.requested_data = []
+    
+    def __del__(self):
+        for data_id in self.requested_data:
+            self.finish_using(data_id)
 
     def request_data(self, data_id):
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -43,6 +48,7 @@ class DataLoader:
             shm_arr = np.ndarray(shape, dtype=dtype, buffer=shm_mmap)
             df = pd.DataFrame(shm_arr)
             # print(df.head())
+            self.requested_data.append(data_id)
             return df
         except Exception as e:
             print(f"Error loading data {data_id}: {e}")
