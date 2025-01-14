@@ -1,4 +1,5 @@
 import socket
+import time
 import numpy as np
 import pandas as pd
 import posix_ipc
@@ -8,11 +9,20 @@ class DataLoader:
     def __init__(self, host='localhost', port=6000):
         self.host = host
         self.port = port
+        self.request_timeout = 60*60
+        self.poll_interval = 30
         self.requested_data = []
     
     def __del__(self):
         for data_id in self.requested_data:
             self.finish_using(data_id)
+    
+    def _parse_info(self, info):
+        shm_name, shape_str, dtype_str = info.split('|')
+        shape = tuple(map(int, shape_str[1:-1].split(',')))
+        dtype = np.dtype(dtype_str)
+        return shm_name, shape, dtype
+        
 
     def request_data(self, data_id):
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -20,10 +30,36 @@ class DataLoader:
         client_socket.send(f"REQUEST#{data_id}".encode())
         info = client_socket.recv(1024).decode()
         client_socket.close()
-        shm_name, shape_str, dtype_str = info.split('|')
-        shape = tuple(map(int, shape_str.strip('()').split(',')))
-        dtype = np.dtype(dtype_str)
-        return shm_name, shape, dtype
+        if not info.startswith("WAIT"):
+            return self._parse_info(info)
+        return self._poll_result(data_id, time.time())
+        
+    def _poll_result(self, data_id: str, start_time: float):
+        while True:
+            if time.time() - start_time > self.request_timeout:
+                print("Request timeout")
+                return None
+            try:
+                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                client_socket.connect((self.host, self.port))
+                if not client_socket:
+                    time.sleep(self.poll_interval)
+                    continue
+                client_socket.send(f"CHECK#{data_id}".encode())
+                response = client_socket.recv(1024).decode()
+                client_socket.close()
+                if response == "WAIT":
+                    time.sleep(self.poll_interval)
+                    continue
+                elif response == "INVALID_REQUEST":
+                    print("Invalid request ID")
+                    return None
+                else:
+                    return self._parse_info(response)
+            except socket.error as e:
+                print(f"Polling failed: {e}")
+                time.sleep(self.poll_interval)
+                continue
 
     def notify_completion(self, data_id):
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
