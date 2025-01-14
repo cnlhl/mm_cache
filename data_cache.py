@@ -60,6 +60,7 @@ class DataCache:
         shm_arr[:] = array[:]
         # Store shared memory name, shape, and dtype in the cache
         self.cache[data_id] = {'shm_name': shm_name, 'shape': array.shape, 'dtype': array.dtype}
+        self.cache_order.increase(data_id)
         print(f"Loaded data {data_id} into shared memory {shm_name}")
         self.cache_usage += array.nbytes
         # Manage cache size
@@ -135,7 +136,6 @@ class DataCache:
                         # Return shared memory info
                         info = f"{self.cache[data_id]['shm_name']}|{self.cache[data_id]['shape']}|{self.cache[data_id]['dtype']}"
                         client_socket.send(info.encode())
-                        self.cache_order.increase(data_id)
                     else:
                         # Cache is full, add request to queue
                         self.request_queue.increase(data_id)
