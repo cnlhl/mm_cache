@@ -76,14 +76,10 @@ class DataLoader:
         print(shm_name, shape, dtype)
 
         try:
-            # Open the shared memory segment
             shm = posix_ipc.SharedMemory(name=shm_name)
-            # Map the shared memory into the process's address space
             shm_mmap = mmap.mmap(shm.fd, shm.size, access=mmap.ACCESS_READ)
-            # Create a NumPy array from the mapped memory
             shm_arr = np.ndarray(shape, dtype=dtype, buffer=shm_mmap)
             df = pd.DataFrame(shm_arr)
-            # print(df.head())
             self.requested_data.append(data_id)
             return df
         except Exception as e:
