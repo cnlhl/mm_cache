@@ -83,6 +83,9 @@ class PriorityQueue:
         """检查键是否存在"""
         return key in self.entry_finder and self.entry_finder[key][-1] is not self.REMOVED
     
+    def check_exist(self, key):
+        return key in self.entry_finder
+    
     def print_queue(self):
         print(self.heap)
         print(self.entry_finder)

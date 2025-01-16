@@ -74,8 +74,6 @@ class DataCache:
                 data_id = self.load_queue.get(timeout=1)  # 如果1秒内没新任务，会抛 queue.Empty
             except queue.Empty:
                 continue
-
-            # 实际加载
             self._actually_load_data(data_id)
 
             self.load_queue.task_done()
@@ -83,14 +81,13 @@ class DataCache:
     def _actually_load_data(self, data_id):
         """
         真正执行磁盘IO + 写共享内存的函数
-        在这里加锁，避免并发安全问题
         """
         with self._cache_lock:
-            # 如果此时 data_id 已经被加载了，就不必重复加载
+            # 避免重复加载
             if data_id in self.cache:
                 return
 
-            data_path = self.get_data_path(data_id)
+            data_path = self._get_data_path(data_id)
             df = pd.read_parquet(data_path)
             array = df.to_numpy()
 
@@ -103,7 +100,6 @@ class DataCache:
                     size=array.nbytes
                 )
             except posix_ipc.ExistentialError:
-                # 已经存在的共享内存
                 shm = posix_ipc.SharedMemory(name=shm_name)
                 if shm.size < array.nbytes:
                     os.ftruncate(shm.fd, array.nbytes)
@@ -117,39 +113,59 @@ class DataCache:
                 'shape': array.shape,
                 'dtype': array.dtype
             }
+            # 实际加载后，更正cache_usage
             self.cache_usage += array.nbytes
+            self.cache_usage -= self._get_file_size(data_path)
 
             logger.info(f"[DataCache] Loaded data {data_id} into shared memory {shm_name}")
 
             shm_mmap.close()
             shm.close_fd()
 
-            # 加载完后做缓存清理
             self.manage_cache()
 
-    def manage_cache(self):
+    def _manage_cache(self):
         """淘汰和加载新的数据"""
-        # 假设：因为已经在 _cache_lock 里，所以这里不再单独加锁
-        # 如果在别的地方调用 manage_cache，确保先获取 _cache_lock
+        # 调用该方法必须先获取锁
+        if self.request_queue.empty():
+        # 若没有pending request，不作处理
+            return
 
         while (not self.cache_order.empty()) and (self.cache_order.front()[1] == 0):
             least_used_key = self.cache_order.front()[0]
             logger.info(f"[DataCache] removing {least_used_key}")
-            shm_name = self.cache[least_used_key]['shm_name']
-            shm = posix_ipc.SharedMemory(name=shm_name)
-            shm.unlink()
-            size_removed = shm.size
-            del self.cache[least_used_key]
-            self.cache_usage -= size_removed
-            self.cache_order.pop()
+            self._remove_data(least_used_key)
 
         while (not self.request_queue.empty()) and (self.cache_usage < self.cache_capacity):
             next_data_id, next_data_weight = self.request_queue.pop()
-            self.load_queue.put(next_data_id)
-            self.cache_order.increase(next_data_id, next_data_weight)
+            self._ready_to_load(next_data_id)
 
-    def get_data_path(self, data_id):
+    def _get_data_path(self, data_id):
         return os.path.join(self.data_path, f'{data_id}s.parquet')
+    
+    def _get_file_size(self, file_path):
+        return os.path.getsize(file_path)
+    
+    def _ready_to_load(self, data_id):
+        # load_queue, cache_order, cache_usage 的更新紧耦合
+        if not self.cache_order.check_exist(data_id):
+            # 如果是首次ready, 更新cache_usage，以原始文件大小预估
+            self.cache_usage += self._get_file_size(self._get_data_path(data_id))
+            # 同时入队准备被load
+            self.load_queue.put(data_id)
+        self.cache_order.increase(data_id)
+
+        
+    def _remove_data(self, data_id):
+        shm_name = self.cache[data_id]['shm_name']
+        shm = posix_ipc.SharedMemory(name=shm_name)
+        shm.unlink()
+        size_removed = shm.size
+        del self.cache[data_id]
+        self.cache_usage -= size_removed
+        self.cache_order.pop()
+    
+    # 所有的开放给server的接口都必须持有锁
 
     def on_complete(self, data_id):
         """客户端用完后，减少其在 cache_order 中的使用权重"""
@@ -161,24 +177,23 @@ class DataCache:
 
     def request_load(self, data_id):
         """
-        对外提供一个方法：请求加载 data_id。
-        如果已经在cache里，就直接返回；否则放到 request_queue 或者直接丢给 load_queue。
+        对外开放接口
+        如果已经在cache里，就直接返回；若不在cache且有空间，就入load_queue；否则入request_queue等待；
         """
         with self._cache_lock:
             if data_id in self.cache:
                 self.cache_order.increase(data_id)
                 # 已加载
                 return True
-            # 如果还有空间，就直接放到load_queue
-            if self.cache_usage < self.cache_capacity:
-                self.load_queue.put(data_id)
-                self.cache_order.increase(data_id)
+            # 如果还有空间或已经在cache_order中（被ready_load过），通过ready_load来更新cache_order
+            if self.cache_usage < self.cache_capacity or self.cache_order.check_exist(data_id):
+                self._ready_to_load(data_id)
                 return True
             else:
                 # 没空间，先排队
                 logger.info(f"[DataCache] Not enough space, add {data_id} to request_queue.")
                 self.request_queue.increase(data_id)
-                self.manage_cache()
+                self._manage_cache()
                 return False
 
     def get_cache_info(self, data_id):

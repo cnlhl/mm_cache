@@ -89,8 +89,7 @@ class CacheServer:
             if info:
                 client_socket.send(info.encode())
             else:
-                # 可能在 request_queue 中排队，也可能无效
-                # 这里你可以根据 self.request_queue.contains(data_id) 做区分
+                # 默认check是非首次请求，也即data_id合法且在等待加载中
                 client_socket.send("WAIT".encode())
 
         elif data.startswith("COMPLETE"):
