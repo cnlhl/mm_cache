@@ -7,7 +7,24 @@ import numpy as np
 import socket
 from priority_queue import PriorityQueue
 import json
+import logging
+import sys
 
+logger = logging.getLogger('cache_logger')
+logger.setLevel(logging.DEBUG)
+
+file_handler = logging.FileHandler('date_cache.log')
+file_handler.setLevel(logging.DEBUG)
+file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(file_formatter)
+
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.INFO)  
+console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(console_formatter)
+
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 class DataCache:
     def __init__(self, config_file='config.json'):
         config = json.load(open(config_file))
@@ -17,7 +34,7 @@ class DataCache:
         try:
             fcntl.lockf(self.fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except IOError:
-            print("Dataloader service is already running")
+            logger.error("Another instance is running, exiting...")
             exit()
         # Initialize cache management
         self.cache = {}
@@ -52,7 +69,7 @@ class DataCache:
         shm_arr = np.ndarray(array.shape, dtype=array.dtype, buffer=shm_mmap)
         shm_arr[:] = array[:]
         self.cache[data_id] = {'shm_name': shm_name, 'shape': array.shape, 'dtype': array.dtype}
-        print(f"Loaded data {data_id} into shared memory {shm_name}")
+        logger.info(f"Loaded data {data_id} into shared memory {shm_name}")
         self.cache_usage += array.nbytes
         self.manage_cache()
         shm_mmap.close()
@@ -64,7 +81,7 @@ class DataCache:
         while not self.cache_order.empty() and self.cache_order.front()[1] == 0: 
             # Remove data not being used
             least_used_key = self.cache_order.front()[0]
-            print(f"removing {least_used_key}")
+            logger.info(f"removing {least_used_key}")
             shm_name = self.cache[least_used_key]['shm_name']
             shm = posix_ipc.SharedMemory(name=shm_name)
             shm.unlink()
@@ -86,7 +103,7 @@ class DataCache:
     def exit_and_clean(self):
         while not self.cache_order.empty():
             # Remove the least recently used data
-            least_used_key, least_used_weight = self.cache_order.getmin()
+            least_used_key, least_used_weight = self.cache_order.front()
             shm_name = self.cache[least_used_key]['shm_name']
             # Open and unlink the shared memory
             shm = posix_ipc.SharedMemory(name=shm_name)
@@ -96,19 +113,19 @@ class DataCache:
 
     def on_complete(self, data_id):
         self.cache_order.decrease(data_id)
-        print(f"Received completion notification for {data_id}, decreased weight.")
+        logger.debug(f"Received completion notification for {data_id}, decreased weight.")
         self.manage_cache()
     
     def start_service(self, host='localhost', port=6000):
         self._initialize_server(host, port)
-        print("Dataloader service started, waiting for connections...")
+        logger.info("Dataloader service started, waiting for connections...")
         try:
             while True:
                 client_socket, addr = self.server_socket.accept()
-                print(f"Received connection from {addr}")
+                logger.info(f"Received connection from {addr}")
                 self._handle_client(client_socket)
         except KeyboardInterrupt:
-            print("Dataloader service stopped")
+            logger.info("Dataloader service stopped")
             self.exit_and_clean()
         finally:
             self.server_socket.close()
@@ -143,7 +160,7 @@ class DataCache:
             # enqueue first, then try to free up space & load data
             self.request_queue.increase(data_id)
             self.manage_cache()
-            print(f"Cache is full, added {data_id} to request queue.")
+            logger.info(f"Cache is full, added {data_id} to request queue.")
             client_socket.send("WAIT".encode())
 
     def _handle_check(self, client_socket, data):

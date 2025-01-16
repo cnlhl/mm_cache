@@ -4,6 +4,24 @@ import numpy as np
 import pandas as pd
 import posix_ipc
 import mmap
+import logging
+import sys
+
+logger = logging.getLogger('loader_logger')
+logger.setLevel(logging.DEBUG) 
+
+file_handler = logging.FileHandler('date_loader.log')
+file_handler.setLevel(logging.DEBUG)  
+file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(file_formatter)
+
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.INFO)  
+console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(console_formatter)
+
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 class DataLoader:
     def __init__(self, host='localhost', port=6000):
@@ -37,7 +55,7 @@ class DataLoader:
     def _poll_result(self, data_id: str, start_time: float):
         while True:
             if time.time() - start_time > self.request_timeout:
-                print("Request timeout")
+                logger.error(f"Request timeout for {data_id}")
                 return None
             try:
                 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -52,12 +70,12 @@ class DataLoader:
                     time.sleep(self.poll_interval)
                     continue
                 elif response == "INVALID_REQUEST":
-                    print("Invalid request ID")
+                    logger.error(f"Invalid request for {data_id}")
                     return None
                 else:
                     return self._parse_info(response)
             except socket.error as e:
-                print(f"Polling failed: {e}")
+                logger.error(f"Error checking request for {data_id}: {e}")
                 time.sleep(self.poll_interval)
                 continue
 
@@ -67,7 +85,7 @@ class DataLoader:
         client_socket.send(f"COMPLETE#{data_id}".encode())
         ack = client_socket.recv(1024).decode()
         if ack == "ACK":
-            print(f"Completion notification for {data_id} sent successfully.")
+            logger.info(f"Completion notification for {data_id} sent successfully.")
         client_socket.close()
 
     def load_day(self, table, date):
@@ -83,7 +101,7 @@ class DataLoader:
             self.requested_data.append(data_id)
             return df
         except Exception as e:
-            print(f"Error loading data {data_id}: {e}")
+            logger.error(f"Error loading data {data_id}: {e}")
     
     def load_stock(self, table, date, stock):
         df = self.load_day(table, date)
