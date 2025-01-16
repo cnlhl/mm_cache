@@ -1,3 +1,5 @@
 draft.ipynb
 subprocess_test.py
 *.log
+config.json
+*.lock
