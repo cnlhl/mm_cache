@@ -10,6 +10,6 @@
 
 ## 讨论
 当某data_id正在加载（在load_que中/正在被load）时，接收到别的用户对相同id的请求，服务能够正确处理吗？：
-- 两种情况：
-  - 当cache_usage未达到上限是：会走到 `ready_to_load` 方法，重复入队`load_que`，但不会重复加载，同时cache_order也能保证正确更新；同时由于 `get_cache_info` 方法拿不到信息，最终客户端收到wait从而进入轮询
-  - 当cache_usage达到上限时：方法进入
+- 正在被加载，说明还没实际加载到cache中，也就是正在跑实际的load函数或正在load队列中等待
+- 以上的这两种情况，`cache_order` 中都已经更新了该id的位置，最终 `request_load` 方法都会走到 `ready_to_load` 方法正确的更新引用计数
+- 反之，如果不是正在被加载，那 `cache` 已经有数据，同样也会正确更新引用计数

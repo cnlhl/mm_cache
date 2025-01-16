@@ -122,8 +122,6 @@ class DataCache:
             shm_mmap.close()
             shm.close_fd()
 
-            self.manage_cache()
-
     def _manage_cache(self):
         """淘汰和加载新的数据"""
         # 调用该方法必须先获取锁
@@ -132,11 +130,13 @@ class DataCache:
             return
 
         while (not self.cache_order.empty()) and (self.cache_order.front()[1] == 0):
+            # 淘汰权重为0的数据
             least_used_key = self.cache_order.front()[0]
             logger.info(f"[DataCache] removing {least_used_key}")
             self._remove_data(least_used_key)
 
         while (not self.request_queue.empty()) and (self.cache_usage < self.cache_capacity):
+            # 加载等待队列中权重最高的数据
             next_data_id, next_data_weight = self.request_queue.pop()
             self._ready_to_load(next_data_id)
 
@@ -173,7 +173,7 @@ class DataCache:
             logger.debug('lock_acquired in on_complete')
             self.cache_order.decrease(data_id)
             logger.debug(f"[DataCache] on_complete {data_id}, decreased weight.")
-            self.manage_cache()
+            self._manage_cache()
 
     def request_load(self, data_id):
         """
@@ -182,15 +182,15 @@ class DataCache:
         """
         with self._cache_lock:
             if data_id in self.cache:
+                # 如果已经在cache里，直接返回
                 self.cache_order.increase(data_id)
-                # 已加载
                 return True
-            # 如果还有空间或已经在cache_order中（被ready_load过），通过ready_load来更新cache_order
             if self.cache_usage < self.cache_capacity or self.cache_order.check_exist(data_id):
+                # 如果还有空间或已经在cache_order中（被ready_load过），通过ready_load来更新cache_order
                 self._ready_to_load(data_id)
                 return True
             else:
-                # 没空间，先排队
+                # 没空间，没有ready_load过（第一次被请求），入request_queue
                 logger.info(f"[DataCache] Not enough space, add {data_id} to request_queue.")
                 self.request_queue.increase(data_id)
                 self._manage_cache()
