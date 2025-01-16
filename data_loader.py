@@ -32,6 +32,7 @@ class DataLoader:
         self.requested_data = []
     
     def __del__(self):
+        print("DataLoader is being deleted.")
         for data_id in self.requested_data:
             self.finish_using(data_id)
     
@@ -80,6 +81,7 @@ class DataLoader:
                 continue
 
     def notify_completion(self, data_id):
+        print(f"Sending completion notification for {data_id}")
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_socket.connect((self.host, self.port))
         client_socket.send(f"COMPLETE#{data_id}".encode())
@@ -87,6 +89,7 @@ class DataLoader:
         if ack == "ACK":
             logger.info(f"Completion notification for {data_id} sent successfully.")
         client_socket.close()
+        print(f"Completion notification for {data_id} sent successfully.")
 
     def load_day(self, table, date):
         data_id = f'{date}_{table}'

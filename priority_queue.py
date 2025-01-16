@@ -30,6 +30,7 @@ class PriorityQueue:
 
     def decrease(self, key):
         """权重减1"""
+        # print('decrease_called')
         if key not in self.entry_finder:
             self._add_entry(key, 0)
         entry = self.entry_finder[key]
@@ -43,6 +44,7 @@ class PriorityQueue:
         # 更新权重并重新加入堆
         self._remove_entry(key)
         self._add_entry(key, new_weight)
+        # print('decrease_finished')
 
     def increase(self, key, optional_weight=1):
         """权重增加指定值"""

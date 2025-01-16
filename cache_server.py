@@ -4,13 +4,22 @@ import sys
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-from data_cache import DataCache
+from data_cache_new import DataCache
 
-logger = logging.getLogger('cache_server')
-logger.setLevel(logging.INFO)
+logger = logging.getLogger('cache_server_logger')
+logger.setLevel(logging.DEBUG)
+
+file_handler = logging.FileHandler('cache_server.log')
+file_handler.setLevel(logging.DEBUG)
+file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(file_formatter)
 
 console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.INFO)
+console_handler.setLevel(logging.INFO)  
+console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(console_formatter)
+
+logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
 class CacheServer:
@@ -24,6 +33,7 @@ class CacheServer:
         self.max_workers = max_workers
 
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
 
@@ -84,10 +94,12 @@ class CacheServer:
                 client_socket.send("WAIT".encode())
 
         elif data.startswith("COMPLETE"):
+            logger.debug('complete notification received')
             # data 格式: "COMPLETE#<data_id>"
             cmd, data_id = data.split('#', 1)
             self.data_cache.on_complete(data_id)
             client_socket.send("ACK".encode())
+            logger.debug('ack sent')
         else:
             client_socket.send("INVALID_REQUEST".encode())
 
