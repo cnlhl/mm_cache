@@ -15,7 +15,7 @@ from priority_queue import PriorityQueue
 logger = logging.getLogger('cache_logger')
 logger.setLevel(logging.DEBUG)
 
-file_handler = logging.FileHandler('date_cache.log')
+file_handler = logging.FileHandler('./log/data_cache.log')
 file_handler.setLevel(logging.DEBUG)
 file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(file_formatter)
@@ -88,7 +88,11 @@ class DataCache:
                 return
 
             data_path = self._get_data_path(data_id)
-            df = pd.read_parquet(data_path)
+            try:
+                df = pd.read_parquet(data_path)
+            except Exception as e:
+                logging.error(f"Failed to read parquet file from {data_path}: {e}")
+                return
             array = df.to_numpy()
 
             shm_name = f"/shm_{data_id}"
@@ -141,7 +145,7 @@ class DataCache:
             self._ready_to_load(next_data_id)
 
     def _get_data_path(self, data_id):
-        return os.path.join(self.data_path, f'{data_id}s.parquet')
+        return os.path.join(self.data_path, f'{data_id}.parquet')
     
     def _get_file_size(self, file_path):
         return os.path.getsize(file_path)
@@ -196,7 +200,7 @@ class DataCache:
                 self._manage_cache()
                 return False
 
-    def get_cache_info(self, data_id):
+    def get_cache_info_by_id(self, data_id):
         """
         返回 shm_name|shape|dtype
         """
@@ -205,6 +209,13 @@ class DataCache:
                 return None
             info = self.cache[data_id]
             return f"{info['shm_name']}|{info['shape']}|{info['dtype']}"
+    
+    def get_whole_cache_info(self):
+        """
+        返回cache数据列表
+        """
+        with self._cache_lock:
+            return list(self.cache.keys())
 
     def exit_and_clean(self):
         """退出前的清理"""

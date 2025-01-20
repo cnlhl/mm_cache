@@ -10,7 +10,7 @@ import sys
 logger = logging.getLogger('loader_logger')
 logger.setLevel(logging.DEBUG) 
 
-file_handler = logging.FileHandler('date_loader.log')
+file_handler = logging.FileHandler('./log/data_loader.log')
 file_handler.setLevel(logging.DEBUG)  
 file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(file_formatter)
@@ -22,6 +22,21 @@ console_handler.setFormatter(console_formatter)
 
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
+
+order_columns = ['order_time', 'sysid', 'order_price', 'order_volume', 'bs_flag', 
+                 'order_type', 'stock_code']
+trade_columns = ['trad_time', 'sysid', 'trade_code', 'bs_flag', 'trade_price', 
+                 'trade_volume', 'sell_order_id', 'buy_order_id', 'stock_code']
+tick_columns = ['time', 'close', 'high', 'low', 'total_volume', 'total_amt', 'bdp1',
+                'bdv1', 'bdp2', 'bdv2', 'bdp3', 'bdv3', 'bdp4', 'bdv4', 'bdp5', 'bdv5',
+                'bdp6', 'bdv6', 'bdp7', 'bdv7', 'bdp8', 'bdv8', 'bdp9', 'bdv9', 'bdp10',
+                'bdv10', 'akp1', 'akv1', 'akp2', 'akv2', 'akp3', 'akv3', 'akp4', 'akv4',
+                'akp5', 'akv5', 'akp6', 'akv6', 'akp7', 'akv7', 'akp8', 'akv8', 'akp9',
+                'akv9', 'akp10', 'akv10', 'total_num', 'total_volume_diff', 
+                'total_amt_diff','total_num_diff', 'stock_code']
+
+column_name = {'order':order_columns, 'trade':trade_columns, 'tick':tick_columns}
+
 
 class DataLoader:
     def __init__(self, host='localhost', port=6000):
@@ -102,13 +117,14 @@ class DataLoader:
             shm_arr = np.ndarray(shape, dtype=dtype, buffer=shm_mmap)
             df = pd.DataFrame(shm_arr)
             self.requested_data.append(data_id)
+            df.columns = column_name[table]
             return df
         except Exception as e:
             logger.error(f"Error loading data {data_id}: {e}")
     
     def load_stock(self, table, date, stock):
         df = self.load_day(table, date)
-        return df[df['stock_id'] == stock]
+        return df[df['stock_code'] == stock]
         
 
     def get(self, table, date, stock_ids=None):

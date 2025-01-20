@@ -2,6 +2,7 @@ import socket
 import threading
 import sys
 import logging
+import json
 from concurrent.futures import ThreadPoolExecutor
 
 from data_cache_new import DataCache
@@ -9,7 +10,7 @@ from data_cache_new import DataCache
 logger = logging.getLogger('cache_server_logger')
 logger.setLevel(logging.DEBUG)
 
-file_handler = logging.FileHandler('cache_server.log')
+file_handler = logging.FileHandler('./log/cache_server.log')
 file_handler.setLevel(logging.DEBUG)
 file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(file_formatter)
@@ -71,7 +72,7 @@ class CacheServer:
             loaded = self.data_cache.request_load(data_id)
             if loaded:
                 # 可能已经在缓存，也可能刚开始加载
-                info = self.data_cache.get_cache_info(data_id)
+                info = self.data_cache.get_cache_info_by_id(data_id)
                 if info:
                     # 已经加载完
                     client_socket.send(info.encode())
@@ -85,12 +86,16 @@ class CacheServer:
         elif data.startswith("CHECK"):
             # data 格式: "CHECK#<data_id>"
             cmd, data_id = data.split('#', 1)
-            info = self.data_cache.get_cache_info(data_id)
+            info = self.data_cache.get_cache_info_by_id(data_id)
             if info:
                 client_socket.send(info.encode())
             else:
                 # 默认check是非首次请求，也即data_id合法且在等待加载中
                 client_socket.send("WAIT".encode())
+        elif data.startswith("LOOK"):
+            # LOOK 请求，返回已在cache中的数据
+            cached = self.data_cache.get_whole_cache_info()
+            client_socket.send(json.dumps(cached).encode)
 
         elif data.startswith("COMPLETE"):
             logger.debug('complete notification received')

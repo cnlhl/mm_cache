@@ -3,3 +3,4 @@ subprocess_test.py
 *.log
 config.json
 *.lock
+*.ipynb
