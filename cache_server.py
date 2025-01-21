@@ -48,7 +48,7 @@ class CacheServer:
             logger.info('auto load enabled')
 
         logger.info(f"CacheServer listening on {self.host}:{self.port}")
-
+    
     def start(self):
         try:
             while True:
@@ -56,8 +56,8 @@ class CacheServer:
                 logger.info(f"Accepted connection from {addr}")
                 if not self.auto_load:
                     self.pool.submit(self._handle_client, client_socket, addr)
-                
-                
+                else:
+                    self.pool.submit(self._handle_client_auto_load, client_socket, addr)             
         except KeyboardInterrupt:
             logger.info("CacheServer stopped by KeyboardInterrupt")
             self.stop()
