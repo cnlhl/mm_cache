@@ -34,6 +34,14 @@ for stock_id, df in data.items():
     print(df)
 ```
 
+### 查看cached中已加载的数据：
+
+```python
+# 查看cached中已加载的数据
+cached = data_loader.get_cached_items()
+print(cached)
+```
+
 ### 完成数据使用
 
 ```python
