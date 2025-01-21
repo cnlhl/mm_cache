@@ -12,6 +12,10 @@ import sys
 
 from priority_queue import PriorityQueue
 
+log_directory = './log'
+if not os.path.exists(log_directory):
+    os.makedirs(log_directory)
+
 logger = logging.getLogger('cache_logger')
 logger.setLevel(logging.DEBUG)
 
@@ -211,11 +215,15 @@ class DataCache:
             return f"{info['shm_name']}|{info['shape']}|{info['dtype']}"
     
     def get_cached_items_list(self):
+        logger.debug('get_cached_items_list called')
         """
         返回cache数据列表
         """
         with self._cache_lock:
-            return list(self.cache.keys())
+            logger.debug('lock_acquired in get_cached_items_list')
+            res = self.cache.keys()
+            logger.debug(f"get_cached_items_list: {res}")
+            return list(res)
 
     def exit_and_clean(self):
         """退出前的清理"""

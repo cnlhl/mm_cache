@@ -5,3 +5,4 @@ config.json
 *.lock
 *.ipynb
 *.pyc
+date_dirs.json

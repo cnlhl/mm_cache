@@ -136,7 +136,9 @@ class CacheServer:
             logger.debug('LOOK received')
             # LOOK 请求，返回已在cache中的数据
             cached = self.data_cache.get_cached_items_list()
-            client_socket.send(json.dumps(cached).encode)
+            logger.debug(type(cached))
+            client_socket.send(json.dumps(cached).encode())
+            logger.debug('LOOK data sent')
         elif data.startswith("COMPLETE"):
             logger.debug('complete notification received')
             # data 格式: "COMPLETE#<data_id>"
