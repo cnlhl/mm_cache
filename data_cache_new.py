@@ -210,7 +210,7 @@ class DataCache:
             info = self.cache[data_id]
             return f"{info['shm_name']}|{info['shape']}|{info['dtype']}"
     
-    def get_whole_cache_info(self):
+    def get_cached_items_list(self):
         """
         返回cache数据列表
         """

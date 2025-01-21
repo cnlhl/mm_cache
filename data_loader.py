@@ -6,6 +6,7 @@ import posix_ipc
 import mmap
 import logging
 import sys
+import json
 
 logger = logging.getLogger('loader_logger')
 logger.setLevel(logging.DEBUG) 
@@ -135,6 +136,14 @@ class DataLoader:
             for stock in stock_ids:
                 res[stock] = self.load_stock(table, date, stock)
             return res
+        
+    def get_cached_items(self):
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect((self.host, self.port))
+        client_socket.send("LOOK".encode())
+        cached = client_socket.recv(1024).decode()
+        client_socket.close()
+        return json.loads(cached)
 
     def finish_using(self, data_id):
         self.notify_completion(data_id)
