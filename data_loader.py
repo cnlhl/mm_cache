@@ -83,6 +83,7 @@ class DataLoader:
                 client_socket.send(f"CHECK#{data_id}".encode())
                 response = client_socket.recv(1024).decode()
                 client_socket.close()
+                logger.debug(f"Response for {data_id}: {response}")
                 if response == "WAIT":
                     time.sleep(self.poll_interval)
                     continue

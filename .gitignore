@@ -6,3 +6,4 @@ config.json
 *.ipynb
 *.pyc
 date_dirs.json
+test.py

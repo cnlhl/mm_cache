@@ -90,32 +90,32 @@ class DataCache:
             # 避免重复加载
             if data_id in self.cache:
                 return
-
+            logger.debug(f'started loading {data_id}')
             data_path = self._get_data_path(data_id)
             try:
                 df = pd.read_parquet(data_path)
             except Exception as e:
-                logging.error(f"Failed to read parquet file from {data_path}: {e}")
+                logger.error(f"Failed to read parquet file from {data_path}: {e}")
                 return
             array = df.to_numpy()
-
+            logger.debug(f"Loaded data {data_id} with shape {array.shape} and dtype {array.dtype}")
             shm_name = f"/shm_{data_id}"
             try:
                 shm = posix_ipc.SharedMemory(
                     name=shm_name,
                     flags=posix_ipc.O_CREAT | posix_ipc.O_EXCL,
-                    mode=0o600,
+                    mode=0o644,
                     size=array.nbytes
                 )
             except posix_ipc.ExistentialError:
                 shm = posix_ipc.SharedMemory(name=shm_name)
                 if shm.size < array.nbytes:
                     os.ftruncate(shm.fd, array.nbytes)
-
+            logger.debug(f"Shared memory {shm_name} created with size {array.nbytes}")
             shm_mmap = mmap.mmap(shm.fd, shm.size, access=mmap.ACCESS_WRITE)
             shm_arr = np.ndarray(array.shape, dtype=array.dtype, buffer=shm_mmap)
             shm_arr[:] = array[:]
-
+            logger.debug(f"Data {data_id} written to shared memory {shm_name}")
             self.cache[data_id] = {
                 'shm_name': shm_name,
                 'shape': array.shape,
@@ -162,6 +162,7 @@ class DataCache:
             # 同时入队准备被load
             self.load_queue.put(data_id)
         self.cache_order.increase(data_id)
+        logger.debug(f"[DataCache] ready_to_load {data_id}, increased weight.")
 
         
     def _remove_data(self, data_id):
@@ -194,6 +195,7 @@ class DataCache:
                 self.cache_order.increase(data_id)
                 return True
             if self.cache_usage < self.cache_capacity or self.cache_order.check_exist(data_id):
+                logger.info(f"[DataCache] Requested data {data_id} is already in loading or ready to load.")
                 # 如果还有空间或已经在cache_order中（被ready_load过），通过ready_load来更新cache_order
                 self._ready_to_load(data_id)
                 return True
