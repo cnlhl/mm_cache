@@ -44,7 +44,7 @@ class DataLoader:
         self.host = host
         self.port = port
         self.request_timeout = 60*60
-        self.poll_interval = 30
+        self.poll_interval = 5
         self.requested_data = []
     
     def __del__(self):
@@ -105,12 +105,11 @@ class DataLoader:
         if ack == "ACK":
             logger.info(f"Completion notification for {data_id} sent successfully.")
         client_socket.close()
-        logger.info(f"Completion notification for {data_id} sent successfully.")
 
     def load_day(self, table, date):
         data_id = f'{date}_{table}'
         shm_name, shape, dtype = self.request_data(data_id)
-        logger.debug(shm_name, shape, dtype)
+        logger.debug(f"Loading data {data_id} with shape {shape} and dtype {dtype}")
 
         try:
             shm = posix_ipc.SharedMemory(name=shm_name)
