@@ -69,7 +69,7 @@ class CacheServer:
         
     def _auto_request_init(self):
         logger.debug('auto_request_init')
-        data_id_list = self.data_cache.get_cachable_items_list()
+        data_id_list = self.data_cache.get_cachable_items_list().sort()
         logger.debug(data_id_list)
         loaded_queue = deque()
         unloaded_queue = deque()
@@ -95,7 +95,7 @@ class CacheServer:
                 time.sleep(30)
                 continue  
             next_to_load = unloaded_queue.popleft()
-            next_to_free = loaded_queue.pop()
+            next_to_free = loaded_queue.popleft()
             self.data_cache.on_complete(next_to_free)
             unloaded_queue.append(next_to_free)
             self.data_cache.request_load(next_to_load)
