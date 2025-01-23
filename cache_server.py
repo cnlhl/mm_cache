@@ -68,28 +68,34 @@ class CacheServer:
         self.server_socket.close()
         
     def _auto_request_init(self):
-        date_list = json.loads()['date_list']
+        data_id_list = self.data_cache.get_cachable_items_list()
         loaded_queue = deque()
         unloaded_queue = deque()
-        for item in date_list:
-            related_data = [f'{item}_trade', f'{item}_order', f'{item}_tick']
-            for data_id in related_data:
-                loaded = self.data_cache.request_load(data_id)
-                if loaded:
-                    loaded_queue.put(data_id)
-                else:
-                    unloaded_queue.put(data_id)
+        for data_id in data_id_list:
+            loaded = self.data_cache.request_load(data_id)
+            if loaded:
+                loaded_queue.put(data_id)
+            else:
+                unloaded_queue.put(data_id)
         self._auto_request(loaded_queue,unloaded_queue)
 
     def _auto_request(self,loaded_queue:deque, unloaded_queue:deque):
-        while(self.data_cache.get_cache_info_by_id(loaded_queue[-1]) is not None):
+        # 当未加载队列不为空，且已加载队列末元素已完成加载时，加载未加载队列首元素
+        while True:
+            if self.data_cache.get_cache_info_by_id(loaded_queue[-1]) is None or len(unloaded_queue) == 0:
+                time.sleep(30)
+                continue  
             next_to_load = unloaded_queue.popleft()
             next_to_free = loaded_queue.pop()
             self.data_cache.on_complete(next_to_free)
             unloaded_queue.append(next_to_free)
             self.data_cache.request_load(next_to_load)
+            while self.data_cache.get_cache_info_by_id(next_to_load) == 'WAITING':
+                next_to_free = loaded_queue.popleft()
+                self.data_cache.on_complete(next_to_free)
+                unloaded_queue.append(next_to_free)
+                time.sleep(30)
             loaded_queue.append(next_to_load)
-            time.sleep(30)
         
 
     def _handle_client(self, client_socket:socket, addr):
@@ -113,14 +119,14 @@ class CacheServer:
             if loaded:
                 # 可能已经在缓存，也可能刚开始加载
                 info = self.data_cache.get_cache_info_by_id(data_id)
-                if info:
-                    logger.debug('REQUEST data loaded')
-                    # 已经加载完
-                    client_socket.send(info.encode())
-                else:
+                if info == 'LOADING':
                     logger.debug('REQUEST data is in loading')
                     # 正在加载中
                     client_socket.send("WAIT".encode())
+                else:
+                    logger.debug('REQUEST data loaded')
+                    # 已经加载完
+                    client_socket.send(info.encode())
             else:
                 # 内存不够，排队中
                 logger.debug('insufficient cache space, wait')
@@ -131,11 +137,11 @@ class CacheServer:
             # data 格式: "CHECK#<data_id>"
             cmd, data_id = data.split('#', 1)
             info = self.data_cache.get_cache_info_by_id(data_id)
-            if info:
-                client_socket.send(info.encode())
-            else:
+            if info == 'LOADING' or info == 'WAITING':
                 # 默认check是非首次请求，也即data_id合法且在等待加载中
                 client_socket.send("WAIT".encode())
+            else:
+                client_socket.send(info.encode())
         elif data.startswith("LOOK"):
             logger.debug('LOOK received')
             # LOOK 请求，返回已在cache中的数据

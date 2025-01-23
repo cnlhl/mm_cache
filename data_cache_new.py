@@ -233,6 +233,10 @@ class DataCache:
         """
         with self._cache_lock:
             if data_id not in self.cache:
+                if self.request_queue.check_exist(data_id):
+                    return "WAIT"
+                if self.cache_order.check_exist(data_id):
+                    return "LOADING"
                 return None
             info = self.cache[data_id]
             return f"{info['shm_name']}|{info['shape']}|{info['dtype']}"
@@ -247,6 +251,13 @@ class DataCache:
             res = self.cache.keys()
             logger.debug(f"get_cached_items_list: {res}")
             return list(res)
+        
+    def get_cachable_items_list(self):
+        """
+        返回可加载数据列表
+        """
+        res = os.listdir(self.data_path)
+        return [item.split('.')[0] for item in res]
 
     def exit_and_clean(self):
         """退出前的清理"""
@@ -263,4 +274,5 @@ class DataCache:
                 except Exception as e:
                     logger.error(f"Failed to recycle shared memory {shm_name}: {e}")
                 self.cache_order.pop()
+        logger.debug('DataCache cleaned')
         os._exit(0)
