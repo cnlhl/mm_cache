@@ -43,6 +43,7 @@ class DataCache:
         except IOError:
             logger.error("Another instance is running, exiting...")
             exit()
+        sys.excepthook = self._exception_handler
 
         # --- 共享资源 ---
         self.cache = {}
@@ -64,8 +65,15 @@ class DataCache:
         self.loader_thread.start()
 
     def __del__(self):
+        logger.debug('DataCache deleted')
+        self.exit_and_clean()
         fcntl.lockf(self.fp, fcntl.LOCK_UN)
         os.remove(self.lock_file)
+        
+    def _exception_handler(self, exception_type, exception, traceback):
+        logger.error(f"Exception: {exception_type} {exception} {traceback}")
+        self.exit_and_clean()
+
 
     def _loader_loop(self):
         """
@@ -110,7 +118,12 @@ class DataCache:
             except posix_ipc.ExistentialError:
                 shm = posix_ipc.SharedMemory(name=shm_name)
                 if shm.size < array.nbytes:
-                    os.ftruncate(shm.fd, array.nbytes)
+                    try: 
+                        os.ftruncate(shm.fd, array.nbytes)
+                    except OSError as e:
+                        logger.error(f"Failed to resize shared memory {shm_name}: {e}")
+                        shm.unlink()
+                        return
             logger.debug(f"Shared memory {shm_name} created with size {array.nbytes}")
             shm_mmap = mmap.mmap(shm.fd, shm.size, access=mmap.ACCESS_WRITE)
             shm_arr = np.ndarray(array.shape, dtype=array.dtype, buffer=shm_mmap)
@@ -166,13 +179,17 @@ class DataCache:
 
         
     def _remove_data(self, data_id):
-        shm_name = self.cache[data_id]['shm_name']
-        shm = posix_ipc.SharedMemory(name=shm_name)
-        shm.unlink()
-        size_removed = shm.size
-        del self.cache[data_id]
-        self.cache_usage -= size_removed
-        self.cache_order.pop()
+        try:
+            shm_name = self.cache[data_id]['shm_name']
+            shm = posix_ipc.SharedMemory(name=shm_name)
+            shm.unlink()
+            size_removed = shm.size
+            del self.cache[data_id]
+            self.cache_usage -= size_removed
+            self.cache_order.pop()
+            logger.info(f"[DataCache] Removed data {data_id} from shared memory {shm_name}")
+        except Exception as e:
+            logger.error(f"Failed to remove shared memory {shm_name}: {e}")
     
     # 所有的开放给server的接口都必须持有锁
 
@@ -189,6 +206,10 @@ class DataCache:
         对外开放接口
         如果已经在cache里，就直接返回；若不在cache且有空间，就入load_queue；否则入request_queue等待；
         """
+        # 先判断数据在不在
+        if not os.path.exists(self._get_data_path(data_id)):
+            logger.error(f"Data {data_id} not found.")
+            return None
         with self._cache_lock:
             if data_id in self.cache:
                 # 如果已经在cache里，直接返回
@@ -235,8 +256,11 @@ class DataCache:
         with self._cache_lock:
             while not self.cache_order.empty():
                 least_used_key, _ = self.cache_order.front()
-                shm_name = self.cache[least_used_key]['shm_name']
-                shm = posix_ipc.SharedMemory(name=shm_name)
-                shm.unlink()
+                try:
+                    shm_name = self.cache[least_used_key]['shm_name']
+                    shm = posix_ipc.SharedMemory(name=shm_name)
+                    shm.unlink()
+                except Exception as e:
+                    logger.error(f"Failed to recycle shared memory {shm_name}: {e}")
                 self.cache_order.pop()
         os._exit(0)

@@ -106,6 +106,10 @@ class CacheServer:
             # data 格式: "REQUEST#<data_id>"
             cmd, data_id = data.split('#', 1)
             loaded = self.data_cache.request_load(data_id)
+            if loaded is None:
+                # 数据不存在
+                logger.error(f"Data {data_id} not found.")
+                client_socket.send("NOT_FOUND".encode())
             if loaded:
                 # 可能已经在缓存，也可能刚开始加载
                 info = self.data_cache.get_cache_info_by_id(data_id)

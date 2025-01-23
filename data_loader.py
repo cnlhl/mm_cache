@@ -65,9 +65,13 @@ class DataLoader:
         client_socket.send(f"REQUEST#{data_id}".encode())
         info = client_socket.recv(1024).decode()
         client_socket.close()
-        if not info.startswith("WAIT"):
-            return self._parse_info(info)
-        return self._poll_result(data_id, time.time())
+        if info == "INVALID_REQUEST":
+            raise ValueError(f"Invalid request for {data_id}")
+        if info == "NOT_FOUND":
+            raise FileNotFoundError(f"Data {data_id} not found.")
+        if info == "WAIT":
+            return self._poll_result(data_id, time.time())
+        return self._parse_info(info)
         
     def _poll_result(self, data_id: str, start_time: float):
         while True:
@@ -109,9 +113,12 @@ class DataLoader:
 
     def load_day(self, table, date):
         data_id = f'{date}_{table}'
-        shm_name, shape, dtype = self.request_data(data_id)
+        try:
+            shm_name, shape, dtype = self.request_data(data_id)
+        except Exception as e:
+            logger.error(f"Error requesting data {data_id}: {e}")
+            raise
         logger.debug(f"Loading data {data_id} with shape {shape} and dtype {dtype}")
-
         try:
             shm = posix_ipc.SharedMemory(name=shm_name)
             shm_mmap = mmap.mmap(shm.fd, shm.size, access=mmap.ACCESS_READ)
@@ -122,20 +129,33 @@ class DataLoader:
             return df
         except Exception as e:
             logger.error(f"Error loading data {data_id}: {e}")
+            raise
     
     def load_stock(self, table, date, stock):
-        df = self.load_day(table, date)
-        return df[df['stock_code'] == stock]
+        try:
+            df = self.load_day(table, date)
+            filtered_df = df[df['stock_code'] == stock]
+            if filtered_df.empty:
+                logger.warning(f"No data found for stock {stock}")
+            return filtered_df
+        except Exception as e:
+            logger.error(f"Error loading stock {stock}: {e}")
+            raise  
         
-
     def get(self, table, date, stock_ids=None):
-        if stock_ids is None:
-            return self.load_day(table, date)
-        else :
-            res = {}
-            for stock in stock_ids:
-                res[stock] = self.load_stock(table, date, stock)
-            return res
+        try:
+            if stock_ids is None:
+                return self.load_day(table, date)
+            else:
+                res = {}
+                for stock in stock_ids:
+                    try:
+                        res[stock] = self.load_stock(table, date, stock)
+                    except Exception as stock_error:
+                        logger.warning(f"Failed to load stock {stock}: {stock_error}")
+                return res
+        except Exception as overall_error:
+            logger.error(f"Failed to get data: {overall_error}")
         
     def get_cached_items(self):
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
