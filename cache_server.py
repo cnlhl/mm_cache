@@ -68,19 +68,28 @@ class CacheServer:
         self.server_socket.close()
         
     def _auto_request_init(self):
+        logger.debug('auto_request_init')
         data_id_list = self.data_cache.get_cachable_items_list()
+        logger.debug(data_id_list)
         loaded_queue = deque()
         unloaded_queue = deque()
-        for data_id in data_id_list:
-            loaded = self.data_cache.request_load(data_id)
-            if loaded:
-                loaded_queue.put(data_id)
-            else:
-                unloaded_queue.put(data_id)
-        self._auto_request(loaded_queue,unloaded_queue)
+        try:
+            for data_id in data_id_list:
+                loaded = self.data_cache.request_load(data_id)
+                if loaded:
+                    loaded_queue.append(data_id)
+                else:
+                    unloaded_queue.append(data_id)
+            self._auto_request(loaded_queue,unloaded_queue)
+        except Exception as e:
+            logger.error(e)
+            self.stop()
 
     def _auto_request(self,loaded_queue:deque, unloaded_queue:deque):
         # 当未加载队列不为空，且已加载队列末元素已完成加载时，加载未加载队列首元素
+        logger.debug('auto_request called')
+        logger.debug(loaded_queue)
+        logger.debug(unloaded_queue)
         while True:
             if self.data_cache.get_cache_info_by_id(loaded_queue[-1]) is None or len(unloaded_queue) == 0:
                 time.sleep(30)
@@ -161,7 +170,7 @@ class CacheServer:
 
         client_socket.close()
 
-def _handle_client_auto_load(self, client_socket:socket, addr):
+    def _handle_client_auto_load(self, client_socket:socket, addr):
         """
         处理一个客户端连接（自动加载情况下）
         """
@@ -172,18 +181,25 @@ def _handle_client_auto_load(self, client_socket:socket, addr):
 
         if data.startswith("REQUEST") or data.startswith("CHECK"):
             # data 格式: "CHECK#<data_id>"
-            cmd, data_id = data.split('#', 1)
-            logger.debug(f'{cmd} received')
-            info = self.data_cache.get_cache_info_by_id(data_id)
-            if info:
-                client_socket.send(info.encode())
-            else:
-                client_socket.send("WAIT".encode())
+            try:
+                cmd, data_id = data.split('#', 1)
+                logger.debug(f'{cmd} received')
+                info = self.data_cache.get_cache_info_by_id(data_id)
+                logger.debug(f'info: {info}')
+                if info == 'LOADING' or info == 'WAITING':
+                    client_socket.send('WAIT'.encode())
+                elif info is None:
+                    client_socket.send('NOT_FOUND'.encode()) 
+                else:
+                    client_socket.send(info.encode())
+            except Exception as e:
+                logger.error(e)
+                client_socket.send('INVALID_REQUEST'.encode())
         elif data.startswith("LOOK"):
             logger.debug('LOOK received')
             # LOOK 请求，返回已在cache中的数据
             cached = self.data_cache.get_cached_items_list()
-            client_socket.send(json.dumps(cached).encode)
+            client_socket.send(json.dumps(cached).encode())
         elif data.startswith("COMPLETE"):
             logger.debug('complete notification received')
             # data 格式: "COMPLETE#<data_id>"
