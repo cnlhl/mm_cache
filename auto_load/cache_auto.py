@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 import posix_ipc
 import mmap
+import atexit
 
 log_directory = './log'
 if not os.path.exists(log_directory):
@@ -45,11 +46,22 @@ class CacheAuto:
         self.cache_capacity = config.get('cache_size', 20)
         self.data_path = config.get('data_path', '/home/haolinl/converted_parquet')
         self.update_interval = config.get('update_interval', 60)
+        
+        atexit.register(self.stop)
 
         self._cache_lock = threading.Lock()
         self._stop_event = threading.Event()
         self.loader_thread = threading.Thread(target=self._initial_load, daemon=True)
         self.loader_thread.start()
+    
+    
+        
+    def stop(self):
+        self._stop_event.set()
+        self.loader_thread.join()
+        for data_id in self.loaded_queue:
+            self._remove_by_data_id(data_id)
+        logger.info('cache stopped')
         
     def _initial_load(self):
         cachable_items = os.listdir(self.data_path)
