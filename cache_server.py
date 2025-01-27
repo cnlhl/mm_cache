@@ -69,8 +69,7 @@ class CacheServer:
         
     def _auto_request_init(self):
         logger.debug('auto_request_init')
-        data_id_list = self.data_cache.get_cachable_items_list()
-        sorted(data_id_list)
+        data_id_list = sorted(self.data_cache.get_cachable_items_list())
         logger.debug(data_id_list)
         loaded_queue = deque()
         unloaded_queue = deque()
@@ -100,11 +99,12 @@ class CacheServer:
             next_to_free = loaded_queue.popleft()
             self.data_cache.on_complete(next_to_free)
             unloaded_queue.append(next_to_free)
-            self.data_cache.request_load(next_to_load)
+            self.data_cache.request_load(next_to_free)
             while self.data_cache.get_cache_info_by_id(next_to_load) == 'WAITING':
                 next_to_free = loaded_queue.popleft()
                 self.data_cache.on_complete(next_to_free)
                 unloaded_queue.append(next_to_free)
+                self.data_cache.request_load(next_to_free)
                 time.sleep(30)
             loaded_queue.append(next_to_load)
         

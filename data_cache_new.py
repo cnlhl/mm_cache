@@ -272,7 +272,7 @@ class DataCache:
                     shm = posix_ipc.SharedMemory(name=shm_name)
                     shm.unlink()
                 except Exception as e:
-                    logger.error(f"Failed to recycle shared memory {shm_name}: {e}")
+                    logger.error(f"Failed to recycle shared memory {e}")
                 self.cache_order.pop()
         logger.debug('DataCache cleaned')
         os._exit(0)
