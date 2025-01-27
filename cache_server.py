@@ -69,7 +69,8 @@ class CacheServer:
         
     def _auto_request_init(self):
         logger.debug('auto_request_init')
-        data_id_list = self.data_cache.get_cachable_items_list().sort()
+        data_id_list = self.data_cache.get_cachable_items_list()
+        sorted(data_id_list)
         logger.debug(data_id_list)
         loaded_queue = deque()
         unloaded_queue = deque()
@@ -87,6 +88,7 @@ class CacheServer:
 
     def _auto_request(self,loaded_queue:deque, unloaded_queue:deque):
         # 当未加载队列不为空，且已加载队列末元素已完成加载时，加载未加载队列首元素
+        # Todo: 逻辑不对，之前的requestload使得所有unloadedque中的元素都在等待中了
         logger.debug('auto_request called')
         logger.debug(loaded_queue)
         logger.debug(unloaded_queue)
