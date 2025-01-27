@@ -6,6 +6,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from collections import deque
 import time
+import os
 
 from data_cache_new import DataCache
 
@@ -92,7 +93,7 @@ class CacheServer:
         logger.debug(unloaded_queue)
         while True:
             if self.data_cache.get_cache_info_by_id(loaded_queue[-1]) is None or len(unloaded_queue) == 0:
-                time.sleep(30)
+                time.sleep(60)
                 continue  
             next_to_load = unloaded_queue.popleft()
             next_to_free = loaded_queue.popleft()

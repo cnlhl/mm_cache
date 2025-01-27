@@ -34,6 +34,7 @@ logger.addHandler(console_handler)
 
 class DataCache:
     def __init__(self, config_file='config.json'):
+        self._clean_previous_data()
         config = json.load(open(config_file))
 
         self.lock_file = 'datacache.lock'
@@ -73,6 +74,14 @@ class DataCache:
     def _exception_handler(self, exception_type, exception, traceback):
         logger.error(f"Exception: {exception_type} {exception} {traceback}")
         self.exit_and_clean()
+
+    def _clean_previous_data(self):
+        pre_shm = os.listdir('/dev/shm')
+        for shm in pre_shm:
+            if shm.startswith('shm_'):
+                shm = posix_ipc.SharedMemory(name=shm)
+                shm.unlink()
+        logger.debug('Previous shared memory cleaned')
 
 
     def _loader_loop(self):
