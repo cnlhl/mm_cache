@@ -33,6 +33,7 @@ console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s
 console_handler.setFormatter(console_formatter)
 
 logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 class CacheAuto:
     def __init__(self, config_file = 'config.json'):
@@ -67,7 +68,7 @@ class CacheAuto:
         cachable_items = os.listdir(self.data_path)
         data_ids = sorted([item.split('.')[0] for item in cachable_items])
         for data_id in data_ids:
-            if self.cache_usage <= self.cache_capacity:
+            if self.cache_usage < self.cache_capacity:
                 self._load_by_data_id(data_id)
                 self.loaded_queue.append(data_id)
             else:
@@ -139,7 +140,7 @@ class CacheAuto:
     def _remove_by_data_id(self,data_id):
         with self._cache_lock:
             try:
-                shm_name = self.cache[data_id]['shm_name']
+                shm_name = f"/shm_{data_id}"
                 shm = posix_ipc.SharedMemory(name=shm_name)
                 shm.unlink()
                 del self.cache[data_id]
