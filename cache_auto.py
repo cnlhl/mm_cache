@@ -140,10 +140,11 @@ class CacheAuto:
     def _remove_by_data_id(self,data_id):
         with self._cache_lock:
             try:
+                del self.cache[data_id]
                 shm_name = f"/shm_{data_id}"
                 shm = posix_ipc.SharedMemory(name=shm_name)
                 shm.unlink()
-                del self.cache[data_id]
+                shm.close_fd()
                 self.cache_usage -= 1
                 logger.info(f"[DataCache] Removed data {data_id} from shared memory {shm_name}")
             except Exception as e:
@@ -153,12 +154,10 @@ class CacheAuto:
         return os.path.join(self.data_path, f'{data_id}.parquet')
     
     def get(self,data_id):
-        with self._cache_lock:
-            if data_id in self.cache:
-                return self.cache[data_id]
-            else:
-                return None
+        if data_id in self.cache:
+            return self.cache[data_id]
+        else:
+            return None
     
     def check(self):
-        with self._cache_lock:
-            return list(self.cache.keys())
+        return list(self.cache.keys())

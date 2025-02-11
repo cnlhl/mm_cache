@@ -9,7 +9,6 @@ import sys
 app = Flask(__name__)
 data_cache = CacheAuto(config_file='config.json')
 
-# 设置日志
 log_directory = './log'
 if not os.path.exists(log_directory):
     os.makedirs(log_directory)
@@ -33,7 +32,7 @@ logger.addHandler(console_handler)
 @app.route('/request/<data_id>', methods=['GET'])
 def handle_request(data_id):
     logger.debug('REQUEST received')
-    shape = data_cache.get(data_id)  # 假设这返回的是一个 NumPy 数组的形状
+    shape = data_cache.get(data_id) 
     if shape is None:
         return "NOT_FOUND", 404
     return jsonify({'shape': list(shape)}), 200
