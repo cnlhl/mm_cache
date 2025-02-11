@@ -44,4 +44,8 @@ def look_cached():
     return jsonify(cached)
 
 if __name__ == '__main__':
-    app.run(debug=False, host='localhost', port=6000)
+    try:
+        app.run(debug=False, host='localhost', port=6000)
+    except KeyboardInterrupt:
+        data_cache.stop()
+        logger.info('Server stopped')

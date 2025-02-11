@@ -1,7 +1,3 @@
-# 自动加载、淘汰
-# 两个队列+计时器
-# 接口：1. get item 2、check list
-
 import json
 from collections import deque
 import threading
