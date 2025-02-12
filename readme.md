@@ -1,8 +1,6 @@
 # CacheClient 使用
 
-CacheClient
-
- 类用于与缓存服务器进行交互，获取缓存数据并将其转换为 Pandas DataFrame。
+`CacheClient` 类用于与缓存服务器进行交互，获取缓存数据并将其转换为 Pandas DataFrame。
 
 ## 初始化
 

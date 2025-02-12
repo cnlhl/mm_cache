@@ -49,7 +49,7 @@ class CacheClient:
         shape = self._request_data(data_id)
         if shape:
             try:
-                shm = posix_ipc.SharedMemory(name=f'/shm_{data_id}')
+                shm = posix_ipc.SharedMemory(name=f'/shm_{data_id}', flags = 0, read_only=True) 
                 shm_mmap = mmap.mmap(shm.fd, shm.size, access=mmap.ACCESS_READ)
                 shm_arr = np.ndarray(shape, dtype='float64', buffer=shm_mmap)
                 df = pd.DataFrame(shm_arr)

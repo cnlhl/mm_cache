@@ -105,7 +105,7 @@ class CacheAuto:
                     shm = posix_ipc.SharedMemory(
                         name=shm_name,
                         flags=posix_ipc.O_CREAT | posix_ipc.O_EXCL,
-                        mode=0o644,
+                        mode=0o666,
                         size=array.nbytes
                     )
                 except posix_ipc.ExistentialError:
@@ -122,7 +122,6 @@ class CacheAuto:
                 shm_arr = np.ndarray(array.shape, dtype=array.dtype, buffer=shm_mmap)
                 shm_arr[:] = array[:]
                 logger.debug(f"Data {data_id} written to shared memory {shm_name}")
-                # 实际加载后，更新cache_usage
                 self.cache[data_id] = array.shape
                 self.cache_usage += 1
 
