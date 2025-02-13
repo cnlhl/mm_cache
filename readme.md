@@ -14,7 +14,7 @@ cache_client = CacheClient()
 
 ## 方法
 
-### `get(table, date)`
+### `get(table, date, stock)`
 
 获取指定表和日期的数据。
 
@@ -22,6 +22,7 @@ cache_client = CacheClient()
 
 - `table (str)`: 表名，可以是 `'order'`、`'trade'` 或 `'tick'`。
 - `date (str)`: 日期，格式为 `YYYYMMDD`。
+- `stock (int)`: 股票代码，格式为整数
 
 #### 返回值
 
