@@ -88,7 +88,7 @@ class CacheAuto:
             self.loaded_queue.append(to_load)
             time.sleep(self.update_interval)
                 
-    def _load_by_data_id(self,data_id):
+    def _load_by_data_id(self, data_id):
         with self._cache_lock:
             try:
                 logger.debug(f'started loading {data_id}')
@@ -98,52 +98,64 @@ class CacheAuto:
                 except Exception as e:
                     logger.error(f"Failed to read parquet file from {data_path}: {e}")
                     return
-                array = df.to_numpy()
-                logger.debug(f"read parquet data {data_id} with shape {array.shape} and dtype {array.dtype}")
-                shm_name = f"/shm_{data_id}"
-                try:
-                    shm = posix_ipc.SharedMemory(
-                        name=shm_name,
-                        flags=posix_ipc.O_CREAT | posix_ipc.O_EXCL,
-                        mode=0o666,
-                        size=array.nbytes
-                    )
-                except posix_ipc.ExistentialError:
-                    shm = posix_ipc.SharedMemory(name=shm_name)
-                    if shm.size < array.nbytes:
-                        try: 
-                            os.ftruncate(shm.fd, array.nbytes)
-                        except OSError as e:
-                            logger.error(f"Failed to resize shared memory {shm_name}: {e}")
-                            shm.unlink()
-                            return
-                logger.debug(f"Shared memory {shm_name} created with size {array.nbytes}")
-                shm_mmap = mmap.mmap(shm.fd, shm.size, access=mmap.ACCESS_WRITE)
-                shm_arr = np.ndarray(array.shape, dtype=array.dtype, buffer=shm_mmap)
-                shm_arr[:] = array[:]
-                logger.debug(f"Data {data_id} written to shared memory {shm_name}")
-                self.cache[data_id] = array.shape
+                
+                # Group the dataframe by the last column
+                last_col = df.columns[-1]
+                groups = df.groupby(last_col)
+    
+                for group_val, group_df in groups:
+                    group_val = int(group_val)
+                    array = group_df.to_numpy()
+                    # logger.debug(f"read parquet data {data_id} group {group_val} with shape {array.shape} and dtype {array.dtype}")
+                    shm_name = f"/shm_{data_id}_{group_val}"
+                    try:
+                        shm = posix_ipc.SharedMemory(
+                            name=shm_name,
+                            flags=posix_ipc.O_CREAT | posix_ipc.O_EXCL,
+                            mode=0o666,
+                            size=array.nbytes
+                        )
+                    except posix_ipc.ExistentialError:
+                        shm = posix_ipc.SharedMemory(name=shm_name)
+                        if shm.size < array.nbytes:
+                            try:
+                                os.ftruncate(shm.fd, array.nbytes)
+                            except OSError as e:
+                                logger.error(f"Failed to resize shared memory {shm_name}: {e}")
+                                shm.unlink()
+                                continue
+    
+                    # logger.debug(f"Shared memory {shm_name} created with size {array.nbytes}")
+                    shm_mmap = mmap.mmap(shm.fd, shm.size, access=mmap.ACCESS_WRITE)
+                    shm_arr = np.ndarray(array.shape, dtype=array.dtype, buffer=shm_mmap)
+                    shm_arr[:] = array[:]
+                    # logger.debug(f"Data {data_id} (group: {group_val}) written to shared memory {shm_name}")
+                    self.cache[f"{data_id}_{group_val}"] = array.shape
+    
+                    # logger.info(f"[DataCache] Loaded data {data_id} (group: {group_val}) into shared memory {shm_name}")
+                    shm_mmap.close()
+                    shm.close_fd()
+                logger.info(f'finished loading {data_id}')
                 self.cache_usage += 1
-
-                logger.info(f"[DataCache] Loaded data {data_id} into shared memory {shm_name}")
-
-                shm_mmap.close()
-                shm.close_fd()
             except Exception as e:
                 logger.error(e)
     
-    def _remove_by_data_id(self,data_id):
+    def _remove_by_data_id(self, data_id):
         with self._cache_lock:
             try:
-                del self.cache[data_id]
-                shm_name = f"/shm_{data_id}"
-                shm = posix_ipc.SharedMemory(name=shm_name)
-                shm.unlink()
-                shm.close_fd()
+                # 找到所有以 data_id_ 开头的键
+                keys_to_remove = [k for k in self.cache.keys() if k.startswith(f"{data_id}_")]
+                for k in keys_to_remove:
+                    del self.cache[k]
+                    shm_name = f"/shm_{k}"
+                    shm = posix_ipc.SharedMemory(name=shm_name)
+                    shm.unlink()
+                    shm.close_fd()
+                    # logger.info(f"[DataCache] Removed data {k} from shared memory {shm_name}")
+                logger.info(f"Removed data {data_id}")
                 self.cache_usage -= 1
-                logger.info(f"[DataCache] Removed data {data_id} from shared memory {shm_name}")
             except Exception as e:
-                logger.error(f"Failed to remove shared memory {shm_name}: {e}")
+                logger.error(f"Failed to remove shared memory for {data_id}: {e}")
             
     def _get_data_path(self, data_id):
         return os.path.join(self.data_path, f'{data_id}.parquet')

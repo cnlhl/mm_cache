@@ -1,4 +1,4 @@
 from cache_client import CacheClient
 
 cache_client = CacheClient()
-print(cache_client.get('order', '20230908'))
+print(cache_client.get('tick', '20231130',600030))

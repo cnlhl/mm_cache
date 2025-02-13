@@ -26,9 +26,9 @@ class CacheClient:
     def __init__(self):
         self.base_url = 'http://localhost:6000'
 
-    def _request_data(self, data_id):
+    def _request_data(self, data_id, stock):
         """请求数据"""
-        response = requests.get(f'{self.base_url}/request/{data_id}')
+        response = requests.get(f'{self.base_url}/request/{data_id}_{stock}')
         if response.status_code == 200:
             # 成功响应，返回解析后的 JSON 数据
             data = response.json()
@@ -44,12 +44,13 @@ class CacheClient:
         else:
             return None
             
-    def get(self, table, date):
+    def get(self, table, date, stock):
         data_id = f'{date}_{table}'
-        shape = self._request_data(data_id)
+        shape = self._request_data(data_id, stock)
+        stock = int(stock)
         if shape:
             try:
-                shm = posix_ipc.SharedMemory(name=f'/shm_{data_id}', flags = 0, read_only=True) 
+                shm = posix_ipc.SharedMemory(name=f'/shm_{data_id}_{stock}', flags = 0, read_only=True) 
                 shm_mmap = mmap.mmap(shm.fd, shm.size, access=mmap.ACCESS_READ)
                 shm_arr = np.ndarray(shape, dtype='float64', buffer=shm_mmap)
                 df = pd.DataFrame(shm_arr)
