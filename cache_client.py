@@ -55,6 +55,8 @@ class CacheClient:
                 shm_arr = np.ndarray(shape, dtype='float64', buffer=shm_mmap)
                 df = pd.DataFrame(shm_arr)
                 df.columns = column_name[table]
+                shm_mmap.close()
+                shm.close_fd()
                 return df
             except Exception as e:
                 logging.error(f"Error loading data {data_id}: {e}")
