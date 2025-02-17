@@ -53,7 +53,7 @@ class CacheClient:
                 shm = posix_ipc.SharedMemory(name=f'/shm_{data_id}_{stock}', flags = 0, read_only=True) 
                 shm_mmap = mmap.mmap(shm.fd, shm.size, access=mmap.ACCESS_READ)
                 shm_arr = np.ndarray(shape, dtype='float64', buffer=shm_mmap)
-                df = pd.DataFrame(shm_arr)
+                df = pd.DataFrame(shm_arr,copy=True)
                 df.columns = column_name[table]
                 shm_mmap.close()
                 shm.close_fd()
