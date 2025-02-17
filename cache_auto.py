@@ -110,6 +110,8 @@ class CacheAuto:
                 # Group the dataframe by the last column
                 last_col = df.columns[-1]
                 groups = df.groupby(last_col)
+
+                temp_cache = {}
     
                 for group_val, group_df in groups:
                     group_val = int(group_val)
@@ -138,12 +140,14 @@ class CacheAuto:
                     shm_arr = np.ndarray(array.shape, dtype=array.dtype, buffer=shm_mmap)
                     shm_arr[:] = array[:]
                     # logger.debug(f"Data {data_id} (group: {group_val}) written to shared memory {shm_name}")
-                    self.cache[f"{data_id}_{group_val}"] = array.shape
+                    # self.cache[f"{data_id}_{group_val}"] = array.shape
+                    temp_cache[f"{data_id}_{group_val}"] = array.shape
     
                     # logger.info(f"[DataCache] Loaded data {data_id} (group: {group_val}) into shared memory {shm_name}")
                     shm_mmap.close()
                     shm.close_fd()
                 logger.info(f'finished loading {data_id}')
+                self.cache.update(temp_cache)
                 self.cache_usage += 1
             except Exception as e:
                 logger.error(e)
