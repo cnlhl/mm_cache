@@ -49,7 +49,7 @@ class Level2Engine:
             res = self.on_calculate(data_cache)
             if len(res) > 0:
                 res[self._code_column] = int(code_)
-            logging.warning('calc {} at {} in {}s'.format(code_, date_, time.time() - s_t))
+            # logging.warning('calc {} at {} in {}s'.format(code_, date_, time.time() - s_t))
             return res
         except Exception as e_msg:
             return pd.DataFrame()
@@ -89,7 +89,7 @@ class Level2Engine:
 
                     finished_days.add(d)
 
-            calc_days -= finished_days
+            calc_days = list(set(calc_days) - finished_days)
             time.sleep(1)
 
 
@@ -118,8 +118,8 @@ class BigOrder(Level2Engine):
 
 
 if __name__ == '__main__':
-    big_ord = BigOrder({'map_dir': '/home/sharedriver/data/cn_lvl2_map', 'o_dir': '/home/KevinC/lvl2_test/big_order'})
-    big_ord.run_task(20230901, 20230929, core=-1)
+    big_ord = BigOrder({'map_dir': '/home/sharedriver/data/cn_lvl2_map', 'o_dir': '/home/haolinl/test_res/big_order'})
+    big_ord.run_task(20230901, 20231230, core=10)
     1/0
 
     cache_client = CacheClient()
