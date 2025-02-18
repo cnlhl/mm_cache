@@ -31,17 +31,32 @@ logger.addHandler(console_handler)
 
 @app.route('/request/<data_id>', methods=['GET'])
 def handle_request(data_id):
-    logger.debug('REQUEST received')
-    shape = data_cache.get(data_id) 
-    if shape is None:
-        return "NOT_FOUND", 404
-    return jsonify({'shape': list(shape)}), 200
+    try:
+        logger.debug(f'REQUEST received for data_id: {data_id}')
+        shape = data_cache.get(data_id) 
+        if shape is None:
+            logger.warning(f'Data not found for id: {data_id}')
+            return jsonify({'error': 'Data not found'}), 404
+        return jsonify({'shape': list(shape)}), 200
+    except Exception as e:
+        logger.error(f'Error processing request for {data_id}: {e}')
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/check', methods=['GET'])
 def look_cached():
     logger.debug('CHECK received')
     cached = data_cache.check()
     return jsonify(cached)
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({
+        'status': 'healthy',
+        'cache_status': {
+            'loaded_count': len(data_cache.loaded_queue),
+            'unloaded_count': len(data_cache.unloaded_queue)
+        }
+    }), 200
 
 if __name__ == '__main__':
     try:

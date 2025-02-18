@@ -44,6 +44,10 @@ class CacheAuto:
         self.data_path = config.get('data_path', '/home/haolinl/converted_parquet')
         self.update_interval = config.get('update_interval', 60)
         
+        # 添加内存使用统计
+        self.total_memory_usage = 0
+        self.max_memory_limit = config.get('max_memory_mb', 1024) * 1024 * 1024  # 转换为字节
+        
         atexit.register(self.stop)
 
         self._cache_lock = threading.Lock()
@@ -93,11 +97,15 @@ class CacheAuto:
             try:
                 logger.debug(f'started loading {data_id}')
                 data_path = self._get_data_path(data_id)
+                if not os.path.exists(data_path):
+                    logger.error(f"Data file not found: {data_path}")
+                    return False
+                
                 try:
                     df = pd.read_parquet(data_path)
                 except Exception as e:
                     logger.error(f"Failed to read parquet file from {data_path}: {e}")
-                    return
+                    return False
                 
                 # Group the dataframe by the last column
                 last_col = df.columns[-1]
