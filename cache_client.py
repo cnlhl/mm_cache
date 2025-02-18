@@ -5,7 +5,7 @@ import mmap
 import numpy as np
 import pandas as pd
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 order_columns = ['order_time', 'sysid', 'order_price', 'order_volume', 'bs_flag', 
                  'order_type', 'stock_code']
