@@ -174,9 +174,9 @@ class CacheAuto:
                     shm.close_fd()
                 logger.info(f'finished loading {data_id}')
                 self.cache.update(temp_cache)
-                self.cache_usage[data_id.split('_')[0]] += 1
+                self.cache_usage[data_id.split('_')[1]] += 1
             except Exception as e:
-                logger.error(e)
+                logger.error(f"Error loading data {data_id}: {e}")
     
     def _remove_by_data_id(self, data_id):
         with self._cache_lock:
@@ -191,7 +191,7 @@ class CacheAuto:
                     shm.close_fd()
                     # logger.info(f"[DataCache] Removed data {k} from shared memory {shm_name}")
                 logger.info(f"Removed data {data_id}")
-                self.cache_usage[data_id.split('_')[0]] -= 1
+                self.cache_usage[data_id.split('_')[1]] -= 1
             except Exception as e:
                 logger.error(f"Failed to remove shared memory for {data_id}: {e}")
             
