@@ -10,6 +10,7 @@ import numpy as np
 import posix_ipc
 import mmap
 import atexit
+import multiprocessing
 
 log_directory = './log'
 if not os.path.exists(log_directory):
@@ -35,63 +36,88 @@ class CacheAuto:
     def __init__(self, config_file = 'config.json'):
         config = json.load(open(config_file))
 
-        self.loaded_queue = deque()
-        self.unloaded_queue = deque()
-        self.cache_usage = 0
+        # 为每种数据类型创建独立的队列
+        self.loaded_queues = {
+            'trade': deque(),
+            'order': deque(),
+            'tick': deque()
+        }
+        self.unloaded_queues = {
+            'trade': deque(),
+            'order': deque(),
+            'tick': deque()
+        }
         self.cache = {}
+        self.cache_usage = {
+            'trade': 0,
+            'order': 0,
+            'tick': 0
+        }
 
-        self.cache_capacity = config.get('cache_size', 20)
+        self.cache_capacity = config.get('cache_size', 20) // 3  # 为每种类型分配相同的容量
         self.data_path = config.get('data_path', '/home/haolinl/converted_parquet')
         self.update_interval = config.get('update_interval', 60)
         
-        # 添加内存使用统计
         self.total_memory_usage = 0
-        self.max_memory_limit = config.get('max_memory_mb', 1024) * 1024 * 1024  # 转换为字节
+        self.max_memory_limit = config.get('max_memory_mb', 1024) * 1024 * 1024
         
         atexit.register(self.stop)
 
         self._cache_lock = threading.Lock()
         self._stop_event = threading.Event()
-        self.loader_thread = threading.Thread(target=self._initial_load, daemon=True)
-        self.loader_thread.start()
-    
-    
         
+        # 创建三个独立的进程
+        self.processes = []
+        for data_type in ['trade', 'order', 'tick']:
+            process = multiprocessing.Process(
+                target=self._initial_load_by_type,
+                args=(data_type,),
+                daemon=True
+            )
+            self.processes.append(process)
+            process.start()
+
     def stop(self):
         self._stop_event.set()
-        self.loader_thread.join()
-        for data_id in self.loaded_queue:
-            self._remove_by_data_id(data_id)
+        for process in self.processes:
+            process.join()
+        for data_type in ['trade', 'order', 'tick']:
+            for data_id in self.loaded_queues[data_type]:
+                self._remove_by_data_id(data_id)
         logger.info('cache stopped')
-        
-    def _initial_load(self):
+
+    def _initial_load_by_type(self, data_type):
         cachable_items = os.listdir(self.data_path)
-        data_ids = sorted([item.split('.')[0] for item in cachable_items])
-        for data_id in data_ids:
-            if self.cache_usage < self.cache_capacity:
-                self._load_by_data_id(data_id)
-                self.loaded_queue.append(data_id)
-            else:
-                self.unloaded_queue.append(data_id)
-        logger.info('finished init')
-        logger.info(f'loaded: {self.loaded_queue}')
-        logger.info(f'unloaded: {self.unloaded_queue}')
-        self._auto_manage_cache()
+        # 只选择对应类型的数据
+        data_ids = sorted([item.split('.')[0] for item in cachable_items if data_type in item])
         
-    def _auto_manage_cache(self):
-        logger.info('auto manage method entered')
-        if len(self.unloaded_queue) == 0:
-            logger.info('all data cached, exit manager')
-            return
-        while True:
-            to_free = self.loaded_queue.popleft()
-            to_load = self.unloaded_queue.popleft()
-            self._remove_by_data_id(to_free)
-            self.unloaded_queue.append(to_free)
-            self._load_by_data_id(to_load)
-            self.loaded_queue.append(to_load)
-            time.sleep(self.update_interval)
+        for data_id in data_ids:
+            if self.cache_usage[data_type] < self.cache_capacity:
+                self._load_by_data_id(data_id)
+                self.loaded_queues[data_type].append(data_id)
+            else:
+                self.unloaded_queues[data_type].append(data_id)
                 
+        logger.info(f'finished init for {data_type}')
+        logger.info(f'loaded {data_type}: {self.loaded_queues[data_type]}')
+        logger.info(f'unloaded {data_type}: {self.unloaded_queues[data_type]}')
+        self._auto_manage_cache_by_type(data_type)
+
+    def _auto_manage_cache_by_type(self, data_type):
+        logger.info(f'auto manage method entered for {data_type}')
+        if len(self.unloaded_queues[data_type]) == 0:
+            logger.info(f'all {data_type} data cached, exit manager')
+            return
+            
+        while not self._stop_event.is_set():
+            to_free = self.loaded_queues[data_type].popleft()
+            to_load = self.unloaded_queues[data_type].popleft()
+            self._remove_by_data_id(to_free)
+            self.unloaded_queues[data_type].append(to_free)
+            self._load_by_data_id(to_load)
+            self.loaded_queues[data_type].append(to_load)
+            time.sleep(self.update_interval)
+
     def _load_by_data_id(self, data_id):
         with self._cache_lock:
             try:
@@ -148,7 +174,7 @@ class CacheAuto:
                     shm.close_fd()
                 logger.info(f'finished loading {data_id}')
                 self.cache.update(temp_cache)
-                self.cache_usage += 1
+                self.cache_usage[data_id.split('_')[0]] += 1
             except Exception as e:
                 logger.error(e)
     
@@ -165,7 +191,7 @@ class CacheAuto:
                     shm.close_fd()
                     # logger.info(f"[DataCache] Removed data {k} from shared memory {shm_name}")
                 logger.info(f"Removed data {data_id}")
-                self.cache_usage -= 1
+                self.cache_usage[data_id.split('_')[0]] -= 1
             except Exception as e:
                 logger.error(f"Failed to remove shared memory for {data_id}: {e}")
             
