@@ -224,6 +224,36 @@ class CacheAuto:
     def _get_data_path(self, data_id):
         return os.path.join(self.data_path, f'{data_id}.parquet')
 
+    def _emergency_cleanup(self):
+        logger.info('emergency cleanup')
+        try:
+            current_process = psutil.Process()
+            for child in current_process.children(recursive=True):
+                try:
+                    child.terminate()
+                    child.wait(timeout=1)
+                except psutil.TimeoutExpired:
+                    child.kill()
+                except psutil.NoSuchProcess:
+                    pass
+            
+            time.sleep(0.5)
+            
+            shm_directory = '/dev/shm'
+            prefix = 'shm'
+
+            for filename in os.listdir(shm_directory):
+                if filename.startswith(prefix):
+                    file_path = os.path.join(shm_directory, filename)
+                    try:
+                        os.remove(file_path)
+                        print(f"Removed {file_path}")
+                    except Exception as e:
+                        print(f"Failed to remove {file_path}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Emergency cleanup failed: {e}")
+
     def stop(self):
         if self._cleaned_up:
             return
@@ -255,36 +285,6 @@ class CacheAuto:
         finally:
             self._cleaned_up = True
             logger.info('Cache stopped and cleaned up')
-
-    def _emergency_cleanup(self):
-        logger.info('emergency cleanup')
-        try:
-            current_process = psutil.Process()
-            for child in current_process.children(recursive=True):
-                try:
-                    child.terminate()
-                    child.wait(timeout=1)
-                except psutil.TimeoutExpired:
-                    child.kill()
-                except psutil.NoSuchProcess:
-                    pass
-            
-            time.sleep(0.5)
-            
-            shm_directory = '/dev/shm'
-            prefix = 'shm'
-
-            for filename in os.listdir(shm_directory):
-                if filename.startswith(prefix):
-                    file_path = os.path.join(shm_directory, filename)
-                    try:
-                        os.remove(file_path)
-                        print(f"Removed {file_path}")
-                    except Exception as e:
-                        print(f"Failed to remove {file_path}: {e}")
-                    
-        except Exception as e:
-            logger.error(f"Emergency cleanup failed: {e}")
 
     def get(self,data_id):
         if data_id in self.cache:
