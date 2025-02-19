@@ -35,7 +35,13 @@ logger.addHandler(console_handler)
 class CacheAuto:
     def __init__(self, config_file = 'config.json'):
         config = json.load(open(config_file))
-
+        
+        # 创建进程管理器
+        self.manager = multiprocessing.Manager()
+        
+        # 使用manager创建共享字典
+        self.cache = self.manager.dict()
+        
         # 为每种数据类型创建独立的队列
         self.loaded_queues = {
             'trade': deque(),
@@ -47,12 +53,11 @@ class CacheAuto:
             'order': deque(),
             'tick': deque()
         }
-        self.cache = {}
-        self.cache_usage = {
+        self.cache_usage = self.manager.dict({
             'trade': 0,
             'order': 0,
             'tick': 0
-        }
+        })
 
         self.cache_capacity = config.get('cache_size', 20) // 3  # 为每种类型分配相同的容量
         self.data_path = config.get('data_path', '/home/haolinl/converted_parquet')
