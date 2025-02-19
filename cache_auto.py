@@ -1,6 +1,5 @@
 import json
 from collections import deque
-import threading
 import os
 import logging
 import sys
@@ -11,6 +10,8 @@ import posix_ipc
 import mmap
 import atexit
 import multiprocessing
+import signal
+import psutil
 
 log_directory = './log'
 if not os.path.exists(log_directory):
@@ -34,24 +35,27 @@ logger.addHandler(console_handler)
 
 class CacheAuto:
     def __init__(self, config_file = 'config.json'):
+        # 移除信号处理相关的代码
+        # self._instance = self  # 不再需要保存实例引用
+        
         config = json.load(open(config_file))
         
-        # 创建进程管理器
         self.manager = multiprocessing.Manager()
-        
-        # 使用manager创建共享字典
         self.cache = self.manager.dict()
+        
+        # 添加运行状态标志
+        self.running = True
         
         # 为每种数据类型创建独立的队列
         self.loaded_queues = {
-            'trade': deque(),
-            'order': deque(),
-            'tick': deque()
+            'trade': self.manager.list(),
+            'order': self.manager.list(),
+            'tick': self.manager.list()
         }
         self.unloaded_queues = {
-            'trade': deque(),
-            'order': deque(),
-            'tick': deque()
+            'trade': self.manager.list(),
+            'order': self.manager.list(),
+            'tick': self.manager.list()
         }
         self.cache_usage = self.manager.dict({
             'trade': 0,
@@ -66,47 +70,76 @@ class CacheAuto:
         self.total_memory_usage = 0
         self.max_memory_limit = config.get('max_memory_mb', 1024) * 1024 * 1024
         
+        # 仍然保留退出处理器
         atexit.register(self.stop)
-
-        self._cache_lock = threading.Lock()
-        self._stop_event = threading.Event()
         
-        # 创建三个独立的进程
+        self._cleaned_up = False
+        self._cache_lock = multiprocessing.Lock()
+        self._stop_event = multiprocessing.Event()
+        self._cleanup_events = {
+            'trade': multiprocessing.Event(),
+            'order': multiprocessing.Event(),
+            'tick': multiprocessing.Event()
+        }
+        
+        # 启动子进程
         self.processes = []
         for data_type in ['trade', 'order', 'tick']:
             process = multiprocessing.Process(
                 target=self._initial_load_by_type,
                 args=(data_type,),
-                daemon=True
+                daemon=True  # 设置为守护进程
             )
             self.processes.append(process)
             process.start()
 
-    def stop(self):
-        self._stop_event.set()
-        for process in self.processes:
-            process.join()
-        for data_type in ['trade', 'order', 'tick']:
-            for data_id in self.loaded_queues[data_type]:
-                self._remove_by_data_id(data_id)
-        logger.info('cache stopped')
-
     def _initial_load_by_type(self, data_type):
-        cachable_items = os.listdir(self.data_path)
-        # 只选择对应类型的数据
-        data_ids = sorted([item.split('.')[0] for item in cachable_items if data_type in item])
+        """子进程中的加载和清理逻辑"""
+        # 设置子进程的信号处理
+        signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
         
-        for data_id in data_ids:
-            if self.cache_usage[data_type] < self.cache_capacity:
-                self._load_by_data_id(data_id)
-                self.loaded_queues[data_type].append(data_id)
-            else:
-                self.unloaded_queues[data_type].append(data_id)
+        try:
+            cachable_items = os.listdir(self.data_path)
+            # 只选择对应类型的数据
+            data_ids = sorted([item.split('.')[0] for item in cachable_items if data_type in item])
+            
+            for data_id in data_ids:
+                # 检查清理信号
+                if self._cleanup_events[data_type].is_set() or self._stop_event.is_set():
+                    logger.info(f"Cleanup signal received during initial load for {data_type}")
+                    break
+                    
+                if self.cache_usage[data_type] < self.cache_capacity:
+                    self._load_by_data_id(data_id)
+                    self.loaded_queues[data_type].append(data_id)
+                else:
+                    self.unloaded_queues[data_type].append(data_id)
+                    
+            logger.info(f'finished init for {data_type}')
+            logger.info(f'loaded {data_type}: {self.loaded_queues[data_type]}')
+            logger.info(f'unloaded {data_type}: {self.unloaded_queues[data_type]}')
+            
+            # 如果没有收到清理信号，进入循环
+            if not (self._cleanup_events[data_type].is_set() or self._stop_event.is_set()):
+                self._auto_manage_cache_by_type(data_type)
                 
-        logger.info(f'finished init for {data_type}')
-        logger.info(f'loaded {data_type}: {self.loaded_queues[data_type]}')
-        logger.info(f'unloaded {data_type}: {self.unloaded_queues[data_type]}')
-        self._auto_manage_cache_by_type(data_type)
+        finally:
+            # 确保在任何情况下都执行清理
+            self._cleanup_type(data_type)
+            
+    def _cleanup_type(self, data_type):
+        """清理特定类型的所有数据"""
+        try:
+            logger.info(f"Starting cleanup for {data_type}")
+            for data_id in list(self.loaded_queues[data_type]):  # 使用list创建副本
+                try:
+                    self._remove_by_data_id(data_id)
+                    self.loaded_queues[data_type].remove(data_id)  # 从队列中移除已清理的数据
+                except Exception as e:
+                    logger.error(f"Error cleaning up {data_id}: {e}")
+            logger.info(f'Cleaned up shared memory for {data_type}')
+        except Exception as e:
+            logger.error(f"Cleanup for {data_type} failed: {e}")
 
     def _auto_manage_cache_by_type(self, data_type):
         logger.info(f'auto manage method entered for {data_type}')
@@ -114,14 +147,25 @@ class CacheAuto:
             logger.info(f'all {data_type} data cached, exit manager')
             return
             
-        while not self._stop_event.is_set():
-            to_free = self.loaded_queues[data_type].popleft()
-            to_load = self.unloaded_queues[data_type].popleft()
-            self._remove_by_data_id(to_free)
-            self.unloaded_queues[data_type].append(to_free)
-            self._load_by_data_id(to_load)
-            self.loaded_queues[data_type].append(to_load)
-            time.sleep(self.update_interval)
+        while not self._stop_event.is_set() and self.running:
+            try:
+                if self._cleanup_events[data_type].is_set():
+                    logger.info(f"Cleanup signal received for {data_type}, exiting manager")
+                    break
+                    
+                # 使用列表方法而不是 deque 方法
+                to_free = self.loaded_queues[data_type].pop(0)
+                to_load = self.unloaded_queues[data_type].pop(0)
+                self._remove_by_data_id(to_free)
+                self.unloaded_queues[data_type].append(to_free)
+                self._load_by_data_id(to_load)
+                self.loaded_queues[data_type].append(to_load)
+                time.sleep(self.update_interval)
+            except Exception as e:
+                logger.error(f"Error in cache management for {data_type}: {e}")
+                if not self.running or self._cleanup_events[data_type].is_set():
+                    break
+                time.sleep(1)
 
     def _load_by_data_id(self, data_id):
         with self._cache_lock:
@@ -202,7 +246,75 @@ class CacheAuto:
             
     def _get_data_path(self, data_id):
         return os.path.join(self.data_path, f'{data_id}.parquet')
-    
+
+    def stop(self):
+        if self._cleaned_up:
+            return
+        try:
+            logger.info("Initiating cache shutdown...")
+            self.running = False
+            self._stop_event.set()
+            
+            # 1. 首先通知所有子进程停止工作
+            for data_type in ['trade', 'order', 'tick']:
+                self._cleanup_events[data_type].set()
+            
+            # 2. 给子进程一定时间进行自清理
+            cleanup_timeout = 60
+            for process in self.processes:
+                process.join(timeout=cleanup_timeout)
+            
+            # 3. 检查并强制终止未能正常退出的进程
+            for process in self.processes:
+                if process.is_alive():
+                    logger.warning(f"Process {process.pid} did not exit gracefully, terminating...")
+                    process.terminate()
+                    process.join(timeout=1)
+                    if process.is_alive():
+                        logger.warning(f"Force killing process {process.pid}")
+                        process.kill()
+
+            # 4. 清理共享内存
+            self._emergency_cleanup()
+        except Exception as e:
+            logger.error(f"Error during cache cleanup: {e}")
+            self._emergency_cleanup()
+        finally:
+            self._cleaned_up = True
+            logger.info('Cache stopped and cleaned up')
+
+    def _emergency_cleanup(self):
+        logger.info('emergency cleanup')
+        try:
+            # 1. 首先终止所有子进程
+            current_process = psutil.Process()
+            for child in current_process.children(recursive=True):
+                try:
+                    child.terminate()
+                    child.wait(timeout=1)
+                except psutil.TimeoutExpired:
+                    child.kill()
+                except psutil.NoSuchProcess:
+                    pass
+            
+            # 2. 等待短暂时间确保进程已经完全终止
+            time.sleep(0.5)
+            
+            shm_directory = '/dev/shm'
+            prefix = 'shm'
+
+            for filename in os.listdir(shm_directory):
+                if filename.startswith(prefix):
+                    file_path = os.path.join(shm_directory, filename)
+                    try:
+                        os.remove(file_path)
+                        print(f"Removed {file_path}")
+                    except Exception as e:
+                        print(f"Failed to remove {file_path}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Emergency cleanup failed: {e}")
+
     def get(self,data_id):
         if data_id in self.cache:
             return self.cache[data_id]
