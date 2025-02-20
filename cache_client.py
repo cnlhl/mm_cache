@@ -34,11 +34,16 @@ class CacheClient:
             data = response.json()
             return data['shape']
         else:
-            return 'Data not found'
+            return None
 
-    def _check_data(self):
+    def _check_data(self, data_type):
         """检查缓存"""
-        response = requests.get(f'{self.base_url}/check')
+        # 构建URL，如果data_type存在则添加为查询参数
+        url = f'{self.base_url}/check'
+        if data_type:
+            url = f'{url}?data_type={data_type}'
+        
+        response = requests.get(url)
         if response.status_code == 200:
             return response.json()
         else:
@@ -62,8 +67,9 @@ class CacheClient:
                 logging.error(f"Error loading data {data_id}: {e}")
                 raise
         else:
-            logging.info('data doesn\'t exist in cache')
-    
+            logging.debug('data doesn\'t exist in cache')
+            return None
+
     def check(self, data_type = None):
         cached = self._check_data(data_type)
         if cached:

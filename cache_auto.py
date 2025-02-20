@@ -74,6 +74,12 @@ class CacheAuto:
             'order': multiprocessing.Event(),
             'tick': multiprocessing.Event()
         }
+
+        self.type_keys = {
+            'trade': self.manager.list(),
+            'order': self.manager.list(),
+            'tick': self.manager.list()
+        }
         
         self.processes = []
         for data_type in ['trade', 'order', 'tick']:
@@ -84,12 +90,6 @@ class CacheAuto:
             )
             self.processes.append(process)
             process.start()
-
-        self.type_keys = {
-            'trade': self.manager.list(),
-            'order': self.manager.list(),
-            'tick': self.manager.list()
-        }
 
     def _initial_load_by_type(self, data_type):
         signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))

@@ -73,8 +73,11 @@ def handle_request(data_id):
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/check', methods=['GET'])
-def look_cached(data_type = None):
+def look_cached():
     logger.debug('CHECK received')
+    # 从请求参数中获取data_type
+    data_type = request.args.get('data_type', None)
+    logger.debug(f'Checking cache with data_type: {data_type}')
     cached = data_cache.check(data_type)
     return jsonify(cached)
 

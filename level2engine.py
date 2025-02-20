@@ -13,9 +13,6 @@ def create_path(path_):
     os.makedirs(os.path.dirname(path_), exist_ok=True)
     return path_
 
-
-# 1. cache days结合类型
-# 2. 股票数量差->结果是否保留
 class Level2Engine:
     def __init__(self, param: dict):
         self._cache_client = CacheClient()
@@ -33,15 +30,22 @@ class Level2Engine:
     def on_calculate(self, data_cache):
         raise NotImplementedError
     
-    def _get_cached_days(self, data_type):
-        cache_ids = self._cache_client.check(data_type)
-        cache_ds = [id.split('_')[0] for id in cache_ids]
-        return set(cache_ds)
+    def _get_cached_days(self, data_types):
+        if isinstance(data_types, str):
+            data_types = [data_types]
+        
+        cached_days_sets = []
+        for data_type in data_types:
+            cache_ids = self._cache_client.check(data_type)
+            cache_ds = [id.split('_')[0] for id in cache_ids]
+            cached_days_sets.append(set(cache_ds))
+        
+        # 取所有数据类型的缓存日期交集
+        return set.intersection(*cached_days_sets) if cached_days_sets else set()
     
-    def _calculate(self, code_, date_):
+    def _calculate(self, code_, data_cache):
         try:
             s_t = time.time()
-            data_cache = {t: self._cache_client.get(t, date_, code_) for t in self._data_types}
             res = self.on_calculate(data_cache)
             if len(res) > 0:
                 res[self._code_column] = int(code_)
@@ -56,7 +60,7 @@ class Level2Engine:
         pool = mp.Pool(core) if core>0 else None
 
         while len(calc_days) > 0:
-            cached_days = self._get_cached_days()
+            cached_days = self._get_cached_days(self._data_types)
             finished_days = set()
             for d in cached_days:
                 if d not in calc_days:
@@ -64,14 +68,28 @@ class Level2Engine:
 
                 s_t = time.time()
                 codes = self._map.get(d)
+                
+                # 预先获取所有股票的数据并检查完整性
+                data_caches = {}
+                valid_codes = []
+                for code in codes:
+                    data_cache = {type: self._cache_client.get(type, d, code) for type in self._data_types}
+                    # 检查是否有任何数据为None或者为空
+                    if all(data is not None and not data.empty for data in data_cache.values()):
+                        data_caches[code] = data_cache
+                        valid_codes.append(code)
+                
+                # 检查数据完整性
+                completion_rate = len(valid_codes) / len(codes)
+                if completion_rate <= 0.8:  # 如果完整率低于80%，跳过该日期
+                    logging.warning(f'数据完整率过低 {d}: {completion_rate:.2%}, 跳过处理')
+                    continue
+
                 if core <= 0:
-                    init_ = pd.DataFrame()
-                    init_['c'] = codes
-                    init_['r'] = init_['c'].apply(lambda u: self._calculate(u, d))
-                    res_d = pd.concat(init_['r'].values)
-                    del init_
+                    res_d = pd.concat([self._calculate(code, data_caches[code]) for code in valid_codes])
                 else:
-                    map_res = pool.map(partial(self._calculate, date_=d), codes)
+                    calc_params = [(code, data_caches[code]) for code in valid_codes]
+                    map_res = pool.starmap(self._calculate, calc_params)
                     res_d = pd.concat(map_res)
                     del map_res
 
