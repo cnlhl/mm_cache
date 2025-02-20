@@ -64,8 +64,8 @@ class CacheClient:
         else:
             logging.info('data doesn\'t exist in cache')
     
-    def check(self):
-        cached = self._check_data()
+    def check(self, data_type = None):
+        cached = self._check_data(data_type)
         if cached:
             return cached
         else:

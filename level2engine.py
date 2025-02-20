@@ -1,18 +1,12 @@
-import socket
+import shelve
 import time
-import numpy as np
+import bisect
 import pandas as pd
-import posix_ipc
-import mmap
-import logging
-import sys
-import os
-import json
-import requests
 import multiprocessing as mp
 from functools import partial
-import shelve
-import bisect
+import os
+import logging
+
 from cache_client import CacheClient
 
 def create_path(path_):
@@ -20,6 +14,8 @@ def create_path(path_):
     return path_
 
 
+# 1. cache days结合类型
+# 2. 股票数量差->结果是否保留
 class Level2Engine:
     def __init__(self, param: dict):
         self._cache_client = CacheClient()
@@ -37,8 +33,8 @@ class Level2Engine:
     def on_calculate(self, data_cache):
         raise NotImplementedError
     
-    def _get_cached_days(self):
-        cache_ids = self._cache_client.check()
+    def _get_cached_days(self, data_type):
+        cache_ids = self._cache_client.check(data_type)
         cache_ds = [id.split('_')[0] for id in cache_ids]
         return set(cache_ds)
     
@@ -96,41 +92,4 @@ class Level2Engine:
         if pool is not None:
             pool.close()
             pool.join()
-
-
-class BigOrder(Level2Engine):
-    def __init__(self, param: dict):
-        super().__init__(param)
-        self._threshold = param.get('threshold', 0.9)
-
-    def on_calculate(self, data_cache):
-        if 'order' not in data_cache:
-            return pd.DataFrame()
-        
-        order = data_cache['order']
-        try:
-            res = pd.Series(dtype=float)
-            big_ord = order[order['order_volume'] >= order['order_volume'].quantile(self._threshold)]
-            res['big_order'] = big_ord[big_ord['bs_flag'] == 0]['order_volume'].sum() / order['order_volume'].sum()
-            return pd.DataFrame(res).T
-        except:
-            return pd.DataFrame()
-
-
-if __name__ == '__main__':
-    big_ord = BigOrder({'map_dir': '/home/sharedriver/data/cn_lvl2_map', 'o_dir': '/home/haolinl/test_res/big_order'})
-    big_ord.run_task(20230901, 20231230, core=-1)
-    1/0
-
-    cache_client = CacheClient()
-    st = time.time()
-    cached_items = cache_client.check()
-    print('{}, get cache in {}s'.format(cached_items, time.time() - st))
-    1/0
-
-    st = time.time()
-    d1 = cache_client.get('order', '20231229', "688799")
-    print("get data in {}s".format(time.time() - st))
-
-
 

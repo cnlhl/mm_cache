@@ -85,6 +85,12 @@ class CacheAuto:
             self.processes.append(process)
             process.start()
 
+        self.type_keys = {
+            'trade': self.manager.list(),
+            'order': self.manager.list(),
+            'tick': self.manager.list()
+        }
+
     def _initial_load_by_type(self, data_type):
         signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
         
@@ -169,6 +175,7 @@ class CacheAuto:
             groups = df.groupby(last_col)
 
             temp_cache = {}
+            data_type = data_id.split('_')[1]
 
             for group_val, group_df in groups:
                 group_val = int(group_val)
@@ -194,7 +201,9 @@ class CacheAuto:
                 shm_mmap = mmap.mmap(shm.fd, shm.size, access=mmap.ACCESS_WRITE)
                 shm_arr = np.ndarray(array.shape, dtype=array.dtype, buffer=shm_mmap)
                 shm_arr[:] = array[:]
-                temp_cache[f"{data_id}_{group_val}"] = array.shape
+                key = f"{data_id}_{group_val}"
+                temp_cache[key] = array.shape
+                self.type_keys[data_type].append(key)
 
                 shm_mmap.close()
                 shm.close_fd()
@@ -202,22 +211,24 @@ class CacheAuto:
             logger.info(f'finished loading {data_id}')
             
             self.cache.update(temp_cache)
-            self.cache_usage[data_id.split('_')[1]] += 1
+            self.cache_usage[data_type] += 1
             
         except Exception as e:
             logger.error(f"Error loading data {data_id}: {e}")
     
     def _remove_by_data_id(self, data_id):
         try:
+            data_type = data_id.split('_')[1]
             keys_to_remove = [k for k in self.cache.keys() if k.startswith(f"{data_id}_")]
             for k in keys_to_remove:
                 del self.cache[k]
+                self.type_keys[data_type].remove(k)
                 shm_name = f"/shm_{k}"
                 shm = posix_ipc.SharedMemory(name=shm_name)
                 shm.unlink()
                 shm.close_fd()
             logger.info(f"Removed data {data_id}")
-            self.cache_usage[data_id.split('_')[1]] -= 1
+            self.cache_usage[data_type] -= 1
         except Exception as e:
             logger.error(f"Failed to remove shared memory for {data_id}: {e}")
         
@@ -292,5 +303,8 @@ class CacheAuto:
         else:
             return None
     
-    def check(self):
-        return list(self.cache.keys())
+    def check(self, data_type = None):
+        if data_type is None:
+            return list(self.cache.keys())
+        else:
+            return list(self.type_keys[data_type])

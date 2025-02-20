@@ -73,9 +73,9 @@ def handle_request(data_id):
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/check', methods=['GET'])
-def look_cached():
+def look_cached(data_type = None):
     logger.debug('CHECK received')
-    cached = data_cache.check()
+    cached = data_cache.check(data_type)
     return jsonify(cached)
 
 @app.route('/health', methods=['GET'])
