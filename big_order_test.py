@@ -24,7 +24,7 @@ class BigOrder(Level2Engine):
 
 if __name__ == '__main__':
     big_ord = BigOrder({'map_dir': '/home/sharedriver/data/cn_lvl2_map', 'o_dir': '/home/haolinl/test_res/big_order'})
-    big_ord.run_task(20230901, 20231230, core=-1)
+    big_ord.run_task(20230901, 20231230, core=10)
 
 
 

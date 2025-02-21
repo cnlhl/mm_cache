@@ -75,10 +75,12 @@ def handle_request(data_id):
 @app.route('/check', methods=['GET'])
 def look_cached():
     logger.debug('CHECK received')
-    # 从请求参数中获取data_type
+    # 从请求参数中获取参数
     data_type = request.args.get('data_type', None)
-    logger.debug(f'Checking cache with data_type: {data_type}')
-    cached = data_cache.check(data_type)
+    date_only = request.args.get('date_only', 'false').lower() == 'true'
+    
+    logger.debug(f'Checking cache with data_type: {data_type}, date_only: {date_only}')
+    cached = data_cache.check(data_type, date_only=date_only)
     return jsonify(cached)
 
 @app.route('/health', methods=['GET'])

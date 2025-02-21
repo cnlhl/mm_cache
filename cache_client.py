@@ -36,12 +36,19 @@ class CacheClient:
         else:
             return None
 
-    def _check_data(self, data_type):
+    def _check_data(self, data_type, date_only=False):
         """检查缓存"""
-        # 构建URL，如果data_type存在则添加为查询参数
         url = f'{self.base_url}/check'
+        # 构建查询参数列表
+        params = []
         if data_type:
-            url = f'{url}?data_type={data_type}'
+            params.append(f'data_type={data_type}')
+        if date_only:
+            params.append('date_only=true')
+        
+        # 拼接参数到URL
+        if params:
+            url += '?' + '&'.join(params)
         
         response = requests.get(url)
         if response.status_code == 200:
@@ -65,13 +72,13 @@ class CacheClient:
                 return df
             except Exception as e:
                 logging.error(f"Error loading data {data_id}: {e}")
-                raise
+                return None
         else:
             logging.debug('data doesn\'t exist in cache')
             return None
 
-    def check(self, data_type = None):
-        cached = self._check_data(data_type)
+    def check(self, data_type = None, date_only = False):
+        cached = self._check_data(data_type, date_only)
         if cached:
             return cached
         else:

@@ -176,6 +176,7 @@ class CacheAuto:
 
             temp_cache = {}
             data_type = data_id.split('_')[1]
+            temp_keys = []
 
             for group_val, group_df in groups:
                 group_val = int(group_val)
@@ -203,7 +204,7 @@ class CacheAuto:
                 shm_arr[:] = array[:]
                 key = f"{data_id}_{group_val}"
                 temp_cache[key] = array.shape
-                self.type_keys[data_type].append(key)
+                temp_keys.append(key)
 
                 shm_mmap.close()
                 shm.close_fd()
@@ -211,6 +212,7 @@ class CacheAuto:
             logger.info(f'finished loading {data_id}')
             
             self.cache.update(temp_cache)
+            self.type_keys[data_type].extend(temp_keys)
             self.cache_usage[data_type] += 1
             
         except Exception as e:
@@ -303,8 +305,18 @@ class CacheAuto:
         else:
             return None
     
-    def check(self, data_type = None):
+    def check(self, data_type = None, date_only = False):
         if data_type is None:
-            return list(self.cache.keys())
+            if date_only:
+                return {
+                    'trade': [item.split('_')[0] for item in self.loaded_queues['trade']],
+                    'order': [item.split('_')[0] for item in self.loaded_queues['order']],
+                    'tick': [item.split('_')[0] for item in self.loaded_queues['tick']]
+                }
+            else:    
+                return list(self.cache.keys())
         else:
-            return list(self.type_keys[data_type])
+            if date_only:
+                return [item.split('_')[0] for item in self.loaded_queues[data_type]]
+            else:
+                return list(self.type_keys[data_type])
